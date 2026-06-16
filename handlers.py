@@ -1,3 +1,4 @@
+import logging
 import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -9,38 +10,33 @@ import ai_tutor as ai
 from curriculum import (
     CONSULATE_TOPICS,
     A2_TOPICS,
-    LEARNING_VIDEOS,
     MOTIVATIONAL_MESSAGES,
     CULTURAL_FACTS,
 )
 
-# Track active consulate simulations: user_id -> conversation history
+logger = logging.getLogger(__name__)
+
 _simulations: dict[int, list] = {}
-# Track pending translation exercises: user_id -> exercise dict
 _pending_exercises: dict[int, dict] = {}
+
+ERR_MSG = "😅 Временная ошибка AI — попробуй через минуту!"
 
 
 async def safe_send(update: Update, text: str, **kwargs):
-    """Send with Markdown, fall back to plain text if parsing fails."""
+    """Send with Markdown, fall back to plain text on parse error."""
     try:
         await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN, **kwargs)
     except BadRequest:
-        # Strip markdown and resend as plain text
         plain = text.replace("*", "").replace("_", "").replace("`", "").replace("\\", "")
-        await update.message.reply_text(plain, **kwargs)
-
-
-def _escape_md(text: str) -> str:
-    """Escape special chars for MarkdownV2."""
-    for ch in r"\_*[]()~`>#+-=|{}.!":
-        text = text.replace(ch, f"\\{ch}")
-    return text
+        try:
+            await update.message.reply_text(plain, **kwargs)
+        except Exception as e:
+            logger.error(f"safe_send fallback failed: {e}")
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await db.upsert_user(user.id, user.username or "", user.first_name or "")
-
     welcome = (
         f"🧛 *Bună ziua, {user.first_name}!* Добро пожаловать!\n\n"
         "Я — Дракула, твой личный репетитор румынского языка!\n"
@@ -48,93 +44,91 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎯 *Наша цель:*\n"
         "• Сдать собеседование с консулом Румынии\n"
         "• Достичь уровня A2\n\n"
-        "📚 *Что умею:*\n"
+        "📚 *Команды:*\n"
         "/lesson — урок дня\n"
-        "/quiz — проверь себя!\n"
+        "/quiz — проверь себя\n"
         "/word — слово дня\n"
         "/consul — симуляция собеседования\n"
         "/translate — упражнение на перевод\n"
         "/video — учебное видео\n"
         "/topics — все темы курса\n"
         "/progress — твой прогресс\n"
-        "/fact — интересный факт о Румынии\n"
-        "/help — помощь\n\n"
-        "Начнём с урока? Нажми /lesson! 🚀"
+        "/schedule — расписание\n"
+        "/fact — факт о Румынии\n\n"
+        "Начнём? Нажми /lesson! 🚀"
     )
-    await update.message.reply_text(welcome, parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, welcome)
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "🧛 *Команды Дракулы:*\n\n"
-        "/lesson — ежедневный урок (тема по расписанию)\n"
-        "/quiz — квиз с кнопками по теме урока\n"
+        "/lesson — ежедневный урок\n"
+        "/quiz — квиз с кнопками\n"
         "/word — слово дня с мемом\n"
-        "/consul — практика собеседования с консулом\n"
+        "/consul — практика с консулом\n"
         "/translate — задание на перевод\n"
-        "/video — видео для изучения\n"
+        "/video — учебное видео\n"
         "/topics — программа курса\n"
         "/progress — статистика и стрик\n"
         "/schedule — расписание автосообщений\n"
-        "/fact — культурный факт о Румынии\n"
+        "/fact — факт о Румынии\n"
         "/myid — проверить регистрацию\n\n"
-        "💬 Или просто напиши любой вопрос по-русски — отвечу!"
+        "💬 Или просто напиши вопрос по-русски!"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, text)
 
 
 async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from config import MORNING_LESSON_HOUR, EVENING_QUIZ_HOUR, TIMEZONE
     tz_label = "МСК" if "Moscow" in TIMEZONE else TIMEZONE
     text = (
-        f"📅 *Расписание автосообщений ({tz_label}):*\n\n"
-        f"☀️ *{MORNING_LESSON_HOUR}:00* — Урок дня (каждый день)\n"
-        f"🌙 *{EVENING_QUIZ_HOUR}:00* — Вечерний квиз (каждый день)\n"
-        f"💪 *12:00* Пн, Чт — Мотивационное сообщение\n"
-        f"🇷🇴 *15:00* Ср — Культурный факт о Румынии\n"
-        f"🎬 *10:00* Вс — Видео недели\n"
-        f"📊 *18:00* Вс — Итоги недели от Дракулы\n\n"
-        f"_Сообщения придут автоматически если ты зарегистрирован (/myid)_"
+        f"📅 *Расписание ({tz_label}):*\n\n"
+        f"☀️ {MORNING_LESSON_HOUR}:00 — Урок дня (каждый день)\n"
+        f"🌙 {EVENING_QUIZ_HOUR}:00 — Вечерний квиз (каждый день)\n"
+        f"💪 12:00 Пн, Чт — Мотивация\n"
+        f"🇷🇴 15:00 Ср — Культурный факт\n"
+        f"🎬 10:00 Вс — Видео недели\n"
+        f"📊 18:00 Вс — Итоги недели\n\n"
+        f"_Убедись что ты зарегистрирован: /myid_"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, text)
 
 
 async def cmd_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    await update.message.reply_text("📖 Готовлю урок... *Момент!*", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("📖 Готовлю урок...")
 
-    # Pick topic based on recent history
     recent = await db.get_recent_topics(user_id, limit=6)
     all_topics = CONSULATE_TOPICS + A2_TOPICS
     unused = [t for t in all_topics if t["id"] not in recent]
     topic = random.choice(unused if unused else all_topics)
-
     key_phrases = topic.get("key_phrases", [])
-    lesson_text = await ai.generate_daily_lesson(topic["id"], topic["title"], key_phrases)
 
-    header = (
-        f"🇷🇴 *Урок дня: {topic['title']}*\n"
-        f"_{topic['ro_title']}_\n\n"
-    )
+    try:
+        lesson_text = await ai.generate_daily_lesson(topic["id"], topic["title"], key_phrases)
+    except Exception as e:
+        logger.error(f"cmd_lesson AI error: {e}")
+        await update.message.reply_text(ERR_MSG)
+        return
 
+    header = f"🇷🇴 Урок дня: {topic['title']} ({topic['ro_title']})\n\n"
     await safe_send(update, header + lesson_text)
 
-    # Update DB
     await db.save_daily_lesson(user_id, topic["id"])
     streak = await db.update_streak(user_id)
     await db.add_points(user_id, 10)
-
-    # Save key phrases as learned words
     if key_phrases:
         await db.save_learned_words(user_id, [(ro, ru) for ro, ru in key_phrases])
 
-    streak_msg = f"\n🔥 Стрик: *{streak} {'день' if streak == 1 else 'дня' if streak < 5 else 'дней'}*! +10 очков!"
-    await update.message.reply_text(streak_msg, parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(
+        f"🔥 Стрик: {streak} дн. | +10 очков!"
+    )
 
 
 async def cmd_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    await update.message.reply_text("🎯 Генерирую квиз...", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("🎯 Генерирую квиз...")
 
     recent = await db.get_recent_topics(user_id, limit=3)
     all_topics = CONSULATE_TOPICS + A2_TOPICS
@@ -142,22 +136,27 @@ async def cmd_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         quiz = await ai.generate_quiz(topic["id"], topic["title"])
-    except Exception:
-        await update.message.reply_text("😅 Квиз временно недоступен. Попробуй /lesson!")
+    except Exception as e:
+        logger.error(f"cmd_quiz AI error: {e}")
+        await update.message.reply_text(ERR_MSG)
         return
 
-    # Store quiz in context for callback
+    # Validate quiz structure
+    if not isinstance(quiz.get("options"), list) or len(quiz["options"]) < 2:
+        await update.message.reply_text("😅 Квиз получился кривой, попробуй ещё раз: /quiz")
+        return
+    if not isinstance(quiz.get("correct_index"), int):
+        quiz["correct_index"] = 0
+
     context.user_data["active_quiz"] = quiz
 
     question_text = (
         f"❓ *Вопрос:*\n{quiz['question']}\n\n"
-        f"🇷🇴 _{quiz.get('romanian_context', '')}_"
+        f"🇷🇴 {quiz.get('romanian_context', '')}"
     )
-
-    options = quiz["options"]
     keyboard = [
         [InlineKeyboardButton(f"{chr(65+i)}) {opt}", callback_data=f"quiz_{i}")]
-        for i, opt in enumerate(options)
+        for i, opt in enumerate(quiz["options"])
     ]
     await safe_send(update, question_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -166,48 +165,47 @@ async def handle_quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
 
-    chosen = int(query.data.split("_")[1])
     quiz = context.user_data.get("active_quiz")
     if not quiz:
         await query.edit_message_text("⚠️ Квиз истёк. Запусти /quiz заново.")
         return
 
+    chosen = int(query.data.split("_")[1])
     user_id = query.from_user.id
     correct_idx = quiz["correct_index"]
     is_correct = chosen == correct_idx
 
     await db.save_quiz_result(user_id, quiz["question"], is_correct)
-
     if is_correct:
         await db.add_points(user_id, 15)
-        result_icon = "✅"
-        result_text = "Правильно! +15 очков 🎉"
-    else:
-        result_icon = "❌"
-        result_text = f"Неправильно. Правильный ответ: {chr(65 + correct_idx)}) {quiz['options'][correct_idx]}"
 
-    explanation = quiz.get("explanation", "")
-    full_text = (
-        f"{result_icon} *{result_text}*\n\n"
-        f"💡 {explanation}\n\n"
-        "Продолжай! /quiz для ещё одного вопроса"
+    result = "✅ Правильно! +15 очков 🎉" if is_correct else (
+        f"❌ Неправильно. Правильный ответ: {chr(65 + correct_idx)}) {quiz['options'][correct_idx]}"
     )
+    explanation = quiz.get("explanation", "")
+    full_text = f"{result}\n\n💡 {explanation}\n\nЕщё: /quiz"
+
     try:
         await query.edit_message_text(full_text, parse_mode=ParseMode.MARKDOWN)
     except BadRequest:
         plain = full_text.replace("*", "").replace("_", "").replace("`", "")
-        await query.edit_message_text(plain)
+        try:
+            await query.edit_message_text(plain)
+        except Exception as e:
+            logger.error(f"handle_quiz_answer edit failed: {e}")
+
     context.user_data.pop("active_quiz", None)
 
 
 async def cmd_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    await update.message.reply_text("🔤 Ищу слово дня...", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("🔤 Ищу слово дня...")
 
     try:
         word = await ai.generate_word_of_day()
-    except Exception:
-        await update.message.reply_text("😅 Словарь временно не отвечает. Попробуй снова!")
+    except Exception as e:
+        logger.error(f"cmd_word AI error: {e}")
+        await update.message.reply_text(ERR_MSG)
         return
 
     await db.save_learned_words(user_id, [(word["romanian"], word["russian"])])
@@ -216,12 +214,11 @@ async def cmd_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         f"📝 *Слово дня:*\n\n"
         f"🇷🇴 *{word['romanian']}* — {word['russian']}\n"
-        f"🔊 Произношение: _{word.get('pronunciation', '?')}_\n\n"
-        f"📖 *Пример:*\n"
-        f"_{word.get('example_ro', '')}_\n"
+        f"🔊 {word.get('pronunciation', '')}\n\n"
+        f"📖 {word.get('example_ro', '')}\n"
         f"_{word.get('example_ru', '')}_\n\n"
-        f"😂 *Мем:* {word.get('meme_caption', '')}\n\n"
-        f"🧠 *Как запомнить:* {word.get('memory_tip', '')}\n\n"
+        f"😂 {word.get('meme_caption', '')}\n\n"
+        f"🧠 Запомни: {word.get('memory_tip', '')}\n\n"
         f"+5 очков!"
     )
     await safe_send(update, text)
@@ -231,20 +228,24 @@ async def cmd_consul(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     _simulations[user_id] = []
 
-    intro = (
-        "🏛️ *Симуляция собеседования с консулом*\n\n"
-        "Ты входишь в кабинет консульства Румынии.\n"
-        "Консул смотрит на твои документы...\n\n"
-        "_Напиши своё приветствие, и консул ответит!_\n"
-        "_(Для выхода напиши /stop_consul)_"
+    await update.message.reply_text(
+        "🏛️ Симуляция собеседования с консулом\n\n"
+        "Ты входишь в кабинет консульства Румынии...\n"
+        "Напиши приветствие, и консул ответит!\n"
+        "Для выхода: /stop_consul"
     )
-    await update.message.reply_text(intro, parse_mode=ParseMode.MARKDOWN)
 
-    # Start conversation
-    opening = await ai.generate_consulate_simulation(
-        "Начни собеседование как консул — поприветствуй кандидата на румынском и задай первый вопрос.",
-        []
-    )
+    try:
+        opening = await ai.generate_consulate_simulation(
+            "Начни собеседование как консул — поприветствуй кандидата на румынском и задай первый вопрос.",
+            []
+        )
+    except Exception as e:
+        logger.error(f"cmd_consul AI error: {e}")
+        _simulations.pop(user_id, None)
+        await update.message.reply_text(ERR_MSG)
+        return
+
     _simulations[user_id].append({"role": "assistant", "content": opening})
     await safe_send(update, f"🏛️ *Консул:*\n\n{opening}")
 
@@ -253,10 +254,15 @@ async def handle_consulate_message(user_id: int, text: str, update: Update):
     history = _simulations.get(user_id, [])
     history.append({"role": "user", "content": text})
 
-    response = await ai.generate_consulate_simulation(text, history[:-1])
-    history.append({"role": "assistant", "content": response})
-    _simulations[user_id] = history[-10:]  # Keep last 10 messages
+    try:
+        response = await ai.generate_consulate_simulation(text, history[:-1])
+    except Exception as e:
+        logger.error(f"consulate AI error: {e}")
+        await update.message.reply_text(ERR_MSG + "\nПродолжи когда AI восстановится.")
+        return
 
+    history.append({"role": "assistant", "content": response})
+    _simulations[user_id] = history[-10:]
     await safe_send(update, f"🏛️ *Консул:*\n\n{response}")
 
 
@@ -265,56 +271,61 @@ async def cmd_stop_consul(update: Update, context: ContextTypes.DEFAULT_TYPE):
     turns = len(_simulations.pop(user_id, [])) // 2
     await db.add_points(user_id, turns * 5)
     await update.message.reply_text(
-        f"✅ Симуляция завершена! Ты дал {turns} ответов. +{turns * 5} очков!\n\n"
-        "💪 Продолжай практиковаться — реальный консул будет не страшнее!",
-        parse_mode=ParseMode.MARKDOWN
+        f"✅ Симуляция завершена! {turns} ответов. +{turns * 5} очков!\n\n"
+        "💪 Реальный консул будет не страшнее!"
     )
 
 
 async def cmd_translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    await update.message.reply_text("✏️ Готовлю задание на перевод...", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("✏️ Готовлю задание...")
 
     try:
         exercise = await ai.generate_translation_exercise()
-    except Exception:
-        await update.message.reply_text("😅 Не могу создать задание. Попробуй позже!")
+    except Exception as e:
+        logger.error(f"cmd_translate AI error: {e}")
+        await update.message.reply_text(ERR_MSG)
         return
 
     _pending_exercises[user_id] = exercise
-
     text = (
         f"✏️ *Переведи на румынский:*\n\n"
         f"🇷🇺 _{exercise['russian_text']}_\n\n"
         f"💡 Подсказка: {exercise.get('hint', 'нет')}\n"
-        f"📍 Контекст: {exercise.get('context', '')}\n\n"
-        f"_Напиши свой перевод в ответе_"
+        f"📍 {exercise.get('context', '')}\n\n"
+        f"_Напиши перевод в ответе_"
     )
     await safe_send(update, text)
 
 
 async def handle_translation_answer(user_id: int, text: str, update: Update):
     exercise = _pending_exercises.pop(user_id)
-    feedback = await ai.check_translation(text, exercise["correct_romanian"], exercise["russian_text"])
+
+    try:
+        feedback = await ai.check_translation(text, exercise["correct_romanian"], exercise["russian_text"])
+    except Exception as e:
+        logger.error(f"translation check AI error: {e}")
+        await update.message.reply_text(
+            f"✅ Правильный ответ: {exercise['correct_romanian']}\n\n" + ERR_MSG
+        )
+        return
 
     correct = exercise["correct_romanian"].lower().strip()
-    user_ans = text.lower().strip()
-    is_correct = correct in user_ans or user_ans in correct
-
+    is_correct = correct in text.lower() or text.lower() in correct
     if is_correct:
         await db.add_points(user_id, 20)
     await db.save_quiz_result(user_id, exercise["russian_text"], is_correct)
 
     points_msg = "\n\n+20 очков! 🏆" if is_correct else ""
-    await safe_send(update, feedback + points_msg + "\n\n➡️ Ещё задание: /translate")
+    await safe_send(update, feedback + points_msg + "\n\n➡️ Ещё: /translate")
 
 
 VIDEO_RESOURCES = [
     ("Romanian With Anca — канал для начинающих", "https://www.youtube.com/@RomanianWithAnca/videos"),
-    ("RomanianPod101 — уроки для A1/A2", "https://www.youtube.com/@RomanianPod101/videos"),
-    ("Anca — приветствия и фразы", "https://www.youtube.com/results?search_query=romanian+with+anca+greetings"),
+    ("RomanianPod101 — уроки A1/A2", "https://www.youtube.com/@RomanianPod101/videos"),
+    ("Приветствия и фразы (Romanian With Anca)", "https://www.youtube.com/results?search_query=romanian+with+anca+greetings"),
     ("Числа и даты на румынском", "https://www.youtube.com/results?search_query=romanian+numbers+dates+lesson"),
-    ("Произношение румынского алфавита", "https://www.youtube.com/results?search_query=romanian+alphabet+pronunciation"),
+    ("Румынский алфавит и произношение", "https://www.youtube.com/results?search_query=romanian+alphabet+pronunciation"),
     ("Глаголы в настоящем времени", "https://www.youtube.com/results?search_query=romanian+present+tense+verbs+beginners"),
     ("Румынский для путешествий", "https://www.youtube.com/results?search_query=romanian+travel+phrases+beginners"),
     ("Семья и личные данные", "https://www.youtube.com/results?search_query=romanian+family+vocabulary+lesson"),
@@ -326,27 +337,25 @@ VIDEO_RESOURCES = [
 async def cmd_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title, url = random.choice(VIDEO_RESOURCES)
     await update.message.reply_text(
-        f"🎬 {title}\n\n"
-        f"{url}\n\n"
-        f"После просмотра проверь себя: /quiz"
+        f"🎬 {title}\n\n{url}\n\nПосле просмотра: /quiz"
     )
 
 
 async def cmd_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     consulate_list = "\n".join(
-        [f"{'✅' if i < 3 else '📌'} {t['title']} — _{t['ro_title']}_"
+        [f"{'✅' if i < 3 else '📌'} {t['title']} ({t['ro_title']})"
          for i, t in enumerate(CONSULATE_TOPICS)]
     )
     a2_list = "\n".join(
-        [f"📌 {t['title']} — _{t['ro_title']}_" for t in A2_TOPICS]
+        [f"📌 {t['title']} ({t['ro_title']})" for t in A2_TOPICS]
     )
     text = (
         f"📚 *Программа курса:*\n\n"
         f"🏛️ *Блок 1: Консульское собеседование*\n{consulate_list}\n\n"
         f"🎓 *Блок 2: Уровень A2*\n{a2_list}\n\n"
-        f"Каждый день /lesson даёт новую тему!"
+        f"Каждый /lesson — новая тема!"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, text)
 
 
 async def cmd_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -357,24 +366,24 @@ async def cmd_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if stats["quiz_total"] > 0:
         accuracy = round(stats["quiz_correct"] / stats["quiz_total"] * 100)
 
-    streak_emoji = "🔥" if stats["streak"] >= 3 else "✨"
     level = "🌱 Начинающий"
     if stats["points"] >= 500:
         level = "📗 A1 уверенный"
     if stats["points"] >= 1500:
         level = "📘 Почти A2!"
 
+    streak_emoji = "🔥" if stats["streak"] >= 3 else "✨"
     text = (
-        f"📊 *Твой прогресс, ученик Дракулы:*\n\n"
-        f"{streak_emoji} Стрик: *{stats['streak']} дней*\n"
-        f"⭐ Очков: *{stats['points']}*\n"
-        f"📖 Уроков пройдено: *{stats['lessons']}*\n"
-        f"🧠 Слов изучено: *{stats['words_learned']}*\n"
-        f"🎯 Квизов: {stats['quiz_total']} (точность: {accuracy}%)\n\n"
+        f"📊 *Твой прогресс:*\n\n"
+        f"{streak_emoji} Стрик: {stats['streak']} дней\n"
+        f"⭐ Очков: {stats['points']}\n"
+        f"📖 Уроков: {stats['lessons']}\n"
+        f"🧠 Слов: {stats['words_learned']}\n"
+        f"🎯 Квизов: {stats['quiz_total']} (точность {accuracy}%)\n\n"
         f"🏆 Уровень: {level}\n\n"
-        f"{'Отличный темп! Продолжай! 💪' if stats['streak'] >= 3 else 'Занимайся каждый день чтобы поднять стрик! 🎯'}"
+        f"{'Отличный темп! 💪' if stats['streak'] >= 3 else 'Учись каждый день — стрик решает! 🎯'}"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, text)
 
 
 async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -384,25 +393,21 @@ async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = (
             f"✅ Ты в базе!\n\n"
             f"🆔 ID: `{user.id}`\n"
-            f"👤 Имя: {user.first_name}\n"
-            f"📅 Зарегистрирован: {user_data['joined_at'][:10]}"
+            f"👤 {user.first_name}\n"
+            f"📅 С нами с: {user_data['joined_at'][:10]}"
         )
     else:
         text = (
-            f"❌ Тебя нет в базе!\n\n"
+            f"❌ Тебя нет в базе!\n"
             f"🆔 Твой ID: `{user.id}`\n\n"
             f"Напиши /start чтобы зарегистрироваться."
         )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, text)
 
 
 async def cmd_fact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fact = random.choice(CULTURAL_FACTS)
-    text = (
-        f"🇷🇴 *Факт о Румынии:*\n\n{fact}\n\n"
-        f"_Знания о стране помогут и на собеседовании!_"
-    )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, f"🇷🇴 *Факт о Румынии:*\n\n{fact}\n\n_Знание культуры помогает на собеседовании!_")
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -412,17 +417,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text.startswith("/"):
         return
 
-    # Check if in consulate simulation
     if user_id in _simulations:
         await handle_consulate_message(user_id, text, update)
         return
 
-    # Check if pending translation
     if user_id in _pending_exercises:
         await handle_translation_answer(user_id, text, update)
         return
 
-    # General question — ask AI
     await update.message.reply_text("🧛 Думаю...")
-    response = await ai.answer_question(text)
-    await safe_send(update, response)
+    try:
+        response = await ai.answer_question(text)
+        await safe_send(update, response)
+    except Exception as e:
+        logger.error(f"handle_text AI error: {e}")
+        await update.message.reply_text(ERR_MSG)

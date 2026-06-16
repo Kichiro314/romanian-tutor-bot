@@ -7,6 +7,7 @@ from telegram.ext import (
     MessageHandler,
     CallbackQueryHandler,
     filters,
+    ContextTypes,
 )
 
 from config import TELEGRAM_BOT_TOKEN
@@ -36,6 +37,14 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logger.error(f"Unhandled error: {context.error}", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message:
+        await update.effective_message.reply_text(
+            "😅 Что-то пошло не так. Попробуй ещё раз через минуту!"
+        )
 
 
 async def post_init(application: Application):
@@ -89,6 +98,9 @@ def main():
 
     # Free text — questions, consulate replies, translation answers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    # Global error handler
+    app.add_error_handler(error_handler)
 
     logger.info("Starting Romanian Tutor Bot...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
