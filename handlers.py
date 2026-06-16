@@ -305,13 +305,28 @@ async def handle_translation_answer(user_id: int, text: str, update: Update):
 
 
 async def cmd_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    video = random.choice(LEARNING_VIDEOS)
+    user_id = update.effective_user.id
+    await update.message.reply_text("🎬 Подбираю видео...", parse_mode=ParseMode.MARKDOWN)
+
+    recent = await db.get_recent_topics(user_id, limit=3)
+    all_topics = CONSULATE_TOPICS + A2_TOPICS
+    topic = next((t for t in all_topics if t["id"] in recent), random.choice(all_topics))
+
+    video = await ai.generate_video_recommendation(topic["title"])
+
     text = (
-        f"🎬 *Видео для изучения румынского:*\n\n"
+        f"🎬 *Видео по теме «{topic['title']}»:*\n\n"
         f"📺 *{video['title']}*\n"
-        f"_{video['description']}_\n\n"
-        f"🔗 {video['url']}\n\n"
-        f"После просмотра — тест: /quiz 🎯"
+        f"_{video['why']}_\n\n"
+        f"🔍 Найди на YouTube:\n"
+        f"`{video['search_query']}`\n\n"
+        f"🔗 Или открой поиск сразу:\n"
+        f"{video['search_url']}\n\n"
+        f"📺 *Лучшие каналы для румынского:*\n"
+        f"• Romanian With Anca\n"
+        f"• Learn Romanian With Vlad\n"
+        f"• RomanianPod101\n\n"
+        f"После просмотра проверь себя: /quiz 🎯"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 

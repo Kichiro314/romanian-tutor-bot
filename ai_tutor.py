@@ -205,6 +205,34 @@ async def generate_weekly_summary(stats: dict) -> str:
     return message.content[0].text
 
 
+async def generate_video_recommendation(topic_title: str) -> dict:
+    prompt = f"""Порекомендуй YouTube видео для изучения румынского по теме "{topic_title}".
+
+Верни ТОЛЬКО валидный JSON:
+{{
+  "title": "название видео которое стоит поискать",
+  "search_query": "поисковый запрос на английском для YouTube",
+  "search_url": "https://www.youtube.com/results?search_query=ЗАПРОС_ЧЕРЕЗ_ПЛЮСЫ",
+  "why": "почему это видео поможет с данной темой (1 предложение)"
+}}
+
+Поисковый запрос должен быть на английском, конкретным и найти реальные обучающие видео.
+Пример search_url: https://www.youtube.com/results?search_query=learn+romanian+greetings+beginners"""
+
+    message = await client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=250,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = message.content[0].text.strip()
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    if start >= 0 and end > start:
+        text = text[start:end]
+    return json.loads(text)
+
+
 async def answer_question(user_question: str) -> str:
     prompt = f"""Студент задаёт вопрос о румынском языке:
 "{user_question}"

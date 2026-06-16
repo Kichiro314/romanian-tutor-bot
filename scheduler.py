@@ -94,15 +94,28 @@ async def send_motivational_message(bot: Bot):
 
 async def send_weekly_video(bot: Bot):
     user_ids = await db.get_all_user_ids()
-    video = random.choice(LEARNING_VIDEOS)
+    topic = random.choice(CONSULATE_TOPICS + A2_TOPICS)
 
-    message = (
-        f"🎬 *Видео недели для изучения румынского:*\n\n"
-        f"📺 *{video['title']}*\n"
-        f"_{video['description']}_\n\n"
-        f"🔗 {video['url']}\n\n"
-        f"Посмотри и потом тестируй себя: /quiz 🎯"
-    )
+    try:
+        video = await ai.generate_video_recommendation(topic["title"])
+        message = (
+            f"🎬 *Видео недели — тема «{topic['title']}»:*\n\n"
+            f"📺 *{video['title']}*\n"
+            f"_{video['why']}_\n\n"
+            f"🔍 Найди на YouTube:\n"
+            f"`{video['search_query']}`\n\n"
+            f"🔗 {video['search_url']}\n\n"
+            f"📺 *Лучшие каналы:* Romanian With Anca, RomanianPod101\n\n"
+            f"После просмотра проверь себя: /quiz 🎯"
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate video rec: {e}")
+        message = (
+            f"🎬 *Видео недели:*\n\n"
+            f"🔍 Найди на YouTube: `learn romanian beginners A1`\n\n"
+            f"🔗 https://www.youtube.com/results?search_query=learn+romanian+beginners\n\n"
+            f"📺 *Лучшие каналы:* Romanian With Anca, RomanianPod101"
+        )
 
     for user_id in user_ids:
         try:
