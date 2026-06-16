@@ -2,6 +2,7 @@ import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
+from telegram.error import BadRequest
 
 import database as db
 import ai_tutor as ai
@@ -17,6 +18,16 @@ from curriculum import (
 _simulations: dict[int, list] = {}
 # Track pending translation exercises: user_id -> exercise dict
 _pending_exercises: dict[int, dict] = {}
+
+
+async def safe_send(update: Update, text: str, **kwargs):
+    """Send with Markdown, fall back to plain text if parsing fails."""
+    try:
+        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN, **kwargs)
+    except BadRequest:
+        # Strip markdown and resend as plain text
+        plain = text.replace("*", "").replace("_", "").replace("`", "").replace("\\", "")
+        await update.message.reply_text(plain, **kwargs)
 
 
 def _escape_md(text: str) -> str:
@@ -106,7 +117,7 @@ async def cmd_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"_{topic['ro_title']}_\n\n"
     )
 
-    await update.message.reply_text(header + lesson_text, parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, header + lesson_text)
 
     # Update DB
     await db.save_daily_lesson(user_id, topic["id"])
@@ -148,11 +159,7 @@ async def cmd_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(f"{chr(65+i)}) {opt}", callback_data=f"quiz_{i}")]
         for i, opt in enumerate(options)
     ]
-    await update.message.reply_text(
-        question_text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode=ParseMode.MARKDOWN,
-    )
+    await safe_send(update, question_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def handle_quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -185,7 +192,11 @@ async def handle_quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"💡 {explanation}\n\n"
         "Продолжай! /quiz для ещё одного вопроса"
     )
-    await query.edit_message_text(full_text, parse_mode=ParseMode.MARKDOWN)
+    try:
+        await query.edit_message_text(full_text, parse_mode=ParseMode.MARKDOWN)
+    except BadRequest:
+        plain = full_text.replace("*", "").replace("_", "").replace("`", "")
+        await query.edit_message_text(plain)
     context.user_data.pop("active_quiz", None)
 
 
@@ -213,7 +224,7 @@ async def cmd_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🧠 *Как запомнить:* {word.get('memory_tip', '')}\n\n"
         f"+5 очков!"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, text)
 
 
 async def cmd_consul(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -235,7 +246,7 @@ async def cmd_consul(update: Update, context: ContextTypes.DEFAULT_TYPE):
         []
     )
     _simulations[user_id].append({"role": "assistant", "content": opening})
-    await update.message.reply_text(f"🏛️ *Консул:*\n\n{opening}", parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, f"🏛️ *Консул:*\n\n{opening}")
 
 
 async def handle_consulate_message(user_id: int, text: str, update: Update):
@@ -246,10 +257,7 @@ async def handle_consulate_message(user_id: int, text: str, update: Update):
     history.append({"role": "assistant", "content": response})
     _simulations[user_id] = history[-10:]  # Keep last 10 messages
 
-    await update.message.reply_text(
-        f"🏛️ *Консул:*\n\n{response}",
-        parse_mode=ParseMode.MARKDOWN
-    )
+    await safe_send(update, f"🏛️ *Консул:*\n\n{response}")
 
 
 async def cmd_stop_consul(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -282,7 +290,7 @@ async def cmd_translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📍 Контекст: {exercise.get('context', '')}\n\n"
         f"_Напиши свой перевод в ответе_"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, text)
 
 
 async def handle_translation_answer(user_id: int, text: str, update: Update):
@@ -298,10 +306,7 @@ async def handle_translation_answer(user_id: int, text: str, update: Update):
     await db.save_quiz_result(user_id, exercise["russian_text"], is_correct)
 
     points_msg = "\n\n+20 очков! 🏆" if is_correct else ""
-    await update.message.reply_text(
-        feedback + points_msg + "\n\n➡️ Ещё задание: /translate",
-        parse_mode=ParseMode.MARKDOWN
-    )
+    await safe_send(update, feedback + points_msg + "\n\n➡️ Ещё задание: /translate")
 
 
 async def cmd_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -328,7 +333,7 @@ async def cmd_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• RomanianPod101\n\n"
         f"После просмотра проверь себя: /quiz 🎯"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, text)
 
 
 async def cmd_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -422,6 +427,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # General question — ask AI
-    await update.message.reply_text("🧛 Думаю...", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text("🧛 Думаю...")
     response = await ai.answer_question(text)
-    await update.message.reply_text(response, parse_mode=ParseMode.MARKDOWN)
+    await safe_send(update, response)
