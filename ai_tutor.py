@@ -67,9 +67,14 @@ async def generate_daily_lesson(topic_id: str, topic_title: str, key_phrases: li
     return await _call(600, prompt)
 
 
-async def generate_quiz(topic_id: str, topic_title: str) -> dict:
-    prompt = f"""Создай квиз-вопрос по теме "{topic_title}" для подготовки к консульскому собеседованию.
+async def generate_quiz(topic_id: str, topic_title: str, recent_questions: list[str] = None) -> dict:
+    avoid_block = ""
+    if recent_questions:
+        questions_list = "\n".join(f"- {q}" for q in recent_questions[:15])
+        avoid_block = f"\n\nНЕ повторяй эти вопросы (уже были заданы):\n{questions_list}\n"
 
+    prompt = f"""Создай квиз-вопрос по теме "{topic_title}" для подготовки к консульскому собеседованию.
+{avoid_block}
 Верни ТОЛЬКО валидный JSON без markdown-обёртки:
 {{
   "question": "текст вопроса на русском",

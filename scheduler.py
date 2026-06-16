@@ -60,23 +60,19 @@ async def send_evening_quiz(bot: Bot):
 
     topic = random.choice(CONSULATE_TOPICS)
 
-    try:
-        quiz = await ai.generate_quiz(topic["id"], topic["title"])
-    except Exception as e:
-        logger.error(f"Failed to generate evening quiz: {e}")
-        return
-
-    message = (
-        f"🌙 *Вечерний квиз!*\n\n"
-        f"❓ {quiz['question']}\n\n"
-        f"🇷🇴 _{quiz.get('romanian_context', '')}_\n\n"
-        + "\n".join([f"{chr(65+i)}) {opt}" for i, opt in enumerate(quiz['options'])])
-        + f"\n\n_Ответ: открой /quiz для интерактивного квиза!_"
-    )
-
     for user_id in user_ids:
         try:
-            await bot.send_message(user_id, message, parse_mode=ParseMode.MARKDOWN)
+            recent_questions = await db.get_recent_questions(user_id, days=14)
+            quiz = await ai.generate_quiz(topic["id"], topic["title"], recent_questions)
+            await db.save_asked_question(user_id, quiz["question"])
+            message = (
+                f"🌙 Вечерний квиз!\n\n"
+                f"❓ {quiz['question']}\n\n"
+                f"🇷🇴 {quiz.get('romanian_context', '')}\n\n"
+                + "\n".join([f"{chr(65+i)}) {opt}" for i, opt in enumerate(quiz['options'])])
+                + "\n\nОткрой /quiz для интерактивного ответа!"
+            )
+            await bot.send_message(user_id, message)
         except Exception as e:
             logger.warning(f"Cannot send quiz to {user_id}: {e}")
 

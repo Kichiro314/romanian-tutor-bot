@@ -99,7 +99,7 @@ async def cmd_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await update.message.reply_text("📖 Готовлю урок...")
 
-    recent = await db.get_recent_topics(user_id, limit=6)
+    recent = await db.get_recent_topics(user_id, limit=14)
     all_topics = CONSULATE_TOPICS + A2_TOPICS
     unused = [t for t in all_topics if t["id"] not in recent]
     topic = random.choice(unused if unused else all_topics)
@@ -130,24 +130,27 @@ async def cmd_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await update.message.reply_text("🎯 Генерирую квиз...")
 
-    recent = await db.get_recent_topics(user_id, limit=3)
+    recent_topics = await db.get_recent_topics(user_id, limit=3)
     all_topics = CONSULATE_TOPICS + A2_TOPICS
-    topic = next((t for t in all_topics if t["id"] in recent), random.choice(all_topics))
+    topic = next((t for t in all_topics if t["id"] in recent_topics), random.choice(all_topics))
+
+    recent_questions = await db.get_recent_questions(user_id, days=14)
 
     try:
-        quiz = await ai.generate_quiz(topic["id"], topic["title"])
+        quiz = await ai.generate_quiz(topic["id"], topic["title"], recent_questions)
     except Exception as e:
         logger.error(f"cmd_quiz AI error: {e}")
         await update.message.reply_text(ERR_MSG)
         return
 
-    # Validate quiz structure
     if not isinstance(quiz.get("options"), list) or len(quiz["options"]) < 2:
         await update.message.reply_text("😅 Квиз получился кривой, попробуй ещё раз: /quiz")
         return
     if not isinstance(quiz.get("correct_index"), int):
         quiz["correct_index"] = 0
 
+    # Save question to history before showing
+    await db.save_asked_question(user_id, quiz["question"])
     context.user_data["active_quiz"] = quiz
 
     question_text = (

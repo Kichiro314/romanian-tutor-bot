@@ -49,6 +49,15 @@ async def init_db():
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS asked_quiz_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                question TEXT,
+                asked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        """)
         await db.commit()
 
 
@@ -160,5 +169,36 @@ async def get_recent_topics(user_id: int, limit: int = 7) -> list[str]:
             "SELECT topic FROM daily_lessons WHERE user_id = ? ORDER BY sent_at DESC LIMIT ?",
             (user_id, limit)
         ) as cursor:
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows]
+
+
+async def save_asked_question(user_id: int, question: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO asked_quiz_questions (user_id, question) VALUES (?, ?)",
+            (user_id, question)
+        )
+        # Keep only last 50 questions per user
+        await db.execute("""
+            DELETE FROM asked_quiz_questions
+            WHERE user_id = ? AND id NOT IN (
+                SELECT id FROM asked_quiz_questions
+                WHERE user_id = ?
+                ORDER BY asked_at DESC LIMIT 50
+            )
+        """, (user_id, user_id))
+        await db.commit()
+
+
+async def get_recent_questions(user_id: int, days: int = 14) -> list[str]:
+    """Return questions asked in the last N days to avoid repeats."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("""
+            SELECT question FROM asked_quiz_questions
+            WHERE user_id = ?
+              AND asked_at >= datetime('now', ?)
+            ORDER BY asked_at DESC
+        """, (user_id, f"-{days} days")) as cursor:
             rows = await cursor.fetchall()
             return [row[0] for row in rows]
