@@ -309,43 +309,27 @@ async def handle_translation_answer(user_id: int, text: str, update: Update):
     await safe_send(update, feedback + points_msg + "\n\n➡️ Ещё задание: /translate")
 
 
-TOPIC_SEARCHES = {
-    "greeting":       ("romanian greetings beginners", "Приветствие"),
-    "personal_info":  ("romanian personal information lesson", "Личные данные"),
-    "family_roots":   ("romanian family vocabulary", "Семья"),
-    "documents":      ("romanian citizenship interview preparation", "Документы"),
-    "romania_basics": ("romania history culture basics", "Румыния"),
-    "numbers_dates":  ("romanian numbers dates lesson", "Числа и даты"),
-    "daily_routine":  ("romanian daily routine vocabulary", "Распорядок дня"),
-    "food_shopping":  ("romanian food shopping phrases", "Еда и магазины"),
-    "transport":      ("romanian transport travel phrases", "Транспорт"),
-    "work_hobbies":   ("romanian work hobbies vocabulary", "Работа и хобби"),
-    "weather":        ("romanian weather vocabulary", "Погода"),
-    "health":         ("romanian health doctor vocabulary", "Здоровье"),
-    "directions":     ("romanian directions city phrases", "Ориентация"),
-    "emotions":       ("romanian emotions feelings vocabulary", "Эмоции"),
-}
+VIDEO_RESOURCES = [
+    ("Romanian With Anca — канал для начинающих", "https://www.youtube.com/@RomanianWithAnca/videos"),
+    ("RomanianPod101 — уроки для A1/A2", "https://www.youtube.com/@RomanianPod101/videos"),
+    ("Anca — приветствия и фразы", "https://www.youtube.com/results?search_query=romanian+with+anca+greetings"),
+    ("Числа и даты на румынском", "https://www.youtube.com/results?search_query=romanian+numbers+dates+lesson"),
+    ("Произношение румынского алфавита", "https://www.youtube.com/results?search_query=romanian+alphabet+pronunciation"),
+    ("Глаголы в настоящем времени", "https://www.youtube.com/results?search_query=romanian+present+tense+verbs+beginners"),
+    ("Румынский для путешествий", "https://www.youtube.com/results?search_query=romanian+travel+phrases+beginners"),
+    ("Семья и личные данные", "https://www.youtube.com/results?search_query=romanian+family+vocabulary+lesson"),
+    ("Подготовка к собеседованию на гражданство", "https://www.youtube.com/results?search_query=romanian+citizenship+interview+language"),
+    ("Румынская культура и традиции", "https://www.youtube.com/results?search_query=romanian+culture+traditions+documentary"),
+]
+
 
 async def cmd_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-
-    recent = await db.get_recent_topics(user_id, limit=3)
-    topic_id = recent[0] if recent else random.choice(list(TOPIC_SEARCHES.keys()))
-    search_query, topic_label = TOPIC_SEARCHES.get(
-        topic_id, ("learn romanian beginners A1", "Румынский A1")
+    title, url = random.choice(VIDEO_RESOURCES)
+    await update.message.reply_text(
+        f"🎬 {title}\n\n"
+        f"{url}\n\n"
+        f"После просмотра проверь себя: /quiz"
     )
-    url = "https://www.youtube.com/results?search_query=" + search_query.replace(" ", "+")
-
-    text = (
-        f"🎬 *Видео по теме «{topic_label}»:*\n\n"
-        f"🔗 {url}\n\n"
-        f"📺 *Лучшие каналы:*\n"
-        f"• Romanian With Anca\n"
-        f"• Learn Romanian With Vlad\n"
-        f"• RomanianPod101\n\n"
-        f"После просмотра проверь себя: /quiz 🎯"
-    )
-    await safe_send(update, text)
 
 
 async def cmd_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
