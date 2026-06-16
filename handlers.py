@@ -309,25 +309,37 @@ async def handle_translation_answer(user_id: int, text: str, update: Update):
     await safe_send(update, feedback + points_msg + "\n\n➡️ Ещё задание: /translate")
 
 
+TOPIC_SEARCHES = {
+    "greeting":       ("romanian greetings beginners", "Приветствие"),
+    "personal_info":  ("romanian personal information lesson", "Личные данные"),
+    "family_roots":   ("romanian family vocabulary", "Семья"),
+    "documents":      ("romanian citizenship interview preparation", "Документы"),
+    "romania_basics": ("romania history culture basics", "Румыния"),
+    "numbers_dates":  ("romanian numbers dates lesson", "Числа и даты"),
+    "daily_routine":  ("romanian daily routine vocabulary", "Распорядок дня"),
+    "food_shopping":  ("romanian food shopping phrases", "Еда и магазины"),
+    "transport":      ("romanian transport travel phrases", "Транспорт"),
+    "work_hobbies":   ("romanian work hobbies vocabulary", "Работа и хобби"),
+    "weather":        ("romanian weather vocabulary", "Погода"),
+    "health":         ("romanian health doctor vocabulary", "Здоровье"),
+    "directions":     ("romanian directions city phrases", "Ориентация"),
+    "emotions":       ("romanian emotions feelings vocabulary", "Эмоции"),
+}
+
 async def cmd_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    await update.message.reply_text("🎬 Подбираю видео...", parse_mode=ParseMode.MARKDOWN)
 
     recent = await db.get_recent_topics(user_id, limit=3)
-    all_topics = CONSULATE_TOPICS + A2_TOPICS
-    topic = next((t for t in all_topics if t["id"] in recent), random.choice(all_topics))
-
-    video = await ai.generate_video_recommendation(topic["title"])
+    topic_id = recent[0] if recent else random.choice(list(TOPIC_SEARCHES.keys()))
+    search_query, topic_label = TOPIC_SEARCHES.get(
+        topic_id, ("learn romanian beginners A1", "Румынский A1")
+    )
+    url = "https://www.youtube.com/results?search_query=" + search_query.replace(" ", "+")
 
     text = (
-        f"🎬 *Видео по теме «{topic['title']}»:*\n\n"
-        f"📺 *{video['title']}*\n"
-        f"_{video['why']}_\n\n"
-        f"🔍 Найди на YouTube:\n"
-        f"`{video['search_query']}`\n\n"
-        f"🔗 Или открой поиск сразу:\n"
-        f"{video['search_url']}\n\n"
-        f"📺 *Лучшие каналы для румынского:*\n"
+        f"🎬 *Видео по теме «{topic_label}»:*\n\n"
+        f"🔗 {url}\n\n"
+        f"📺 *Лучшие каналы:*\n"
         f"• Romanian With Anca\n"
         f"• Learn Romanian With Vlad\n"
         f"• RomanianPod101\n\n"
