@@ -24,6 +24,7 @@ from handlers import (
     cmd_topics,
     cmd_progress,
     cmd_fact,
+    cmd_myid,
     handle_quiz_answer,
     handle_text,
 )
@@ -77,6 +78,7 @@ def main():
     app.add_handler(CommandHandler("topics", cmd_topics))
     app.add_handler(CommandHandler("progress", cmd_progress))
     app.add_handler(CommandHandler("fact", cmd_fact))
+    app.add_handler(CommandHandler("myid", cmd_myid))
 
     # Inline button callbacks (quiz answers)
     app.add_handler(CallbackQueryHandler(handle_quiz_answer, pattern=r"^quiz_\d$"))

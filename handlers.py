@@ -343,6 +343,25 @@ async def cmd_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
 
+async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    user_data = await db.get_user(user.id)
+    if user_data:
+        text = (
+            f"✅ Ты в базе!\n\n"
+            f"🆔 ID: `{user.id}`\n"
+            f"👤 Имя: {user.first_name}\n"
+            f"📅 Зарегистрирован: {user_data['joined_at'][:10]}"
+        )
+    else:
+        text = (
+            f"❌ Тебя нет в базе!\n\n"
+            f"🆔 Твой ID: `{user.id}`\n\n"
+            f"Напиши /start чтобы зарегистрироваться."
+        )
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+
+
 async def cmd_fact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fact = random.choice(CULTURAL_FACTS)
     text = (
