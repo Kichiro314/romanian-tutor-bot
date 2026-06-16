@@ -25,6 +25,7 @@ from handlers import (
     cmd_progress,
     cmd_fact,
     cmd_myid,
+    cmd_schedule,
     handle_quiz_answer,
     handle_text,
 )
@@ -52,7 +53,9 @@ async def post_init(application: Application):
         ("video", "Видео для изучения"),
         ("topics", "Программа курса"),
         ("progress", "Мой прогресс"),
+        ("schedule", "Расписание сообщений"),
         ("fact", "Факт о Румынии"),
+        ("myid", "Проверить регистрацию"),
         ("help", "Помощь"),
     ])
 
@@ -79,6 +82,7 @@ def main():
     app.add_handler(CommandHandler("progress", cmd_progress))
     app.add_handler(CommandHandler("fact", cmd_fact))
     app.add_handler(CommandHandler("myid", cmd_myid))
+    app.add_handler(CommandHandler("schedule", cmd_schedule))
 
     # Inline button callbacks (quiz answers)
     app.add_handler(CallbackQueryHandler(handle_quiz_answer, pattern=r"^quiz_\d$"))

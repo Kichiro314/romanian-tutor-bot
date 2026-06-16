@@ -64,8 +64,26 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/video — видео для изучения\n"
         "/topics — программа курса\n"
         "/progress — статистика и стрик\n"
-        "/fact — культурный факт о Румынии\n\n"
+        "/schedule — расписание автосообщений\n"
+        "/fact — культурный факт о Румынии\n"
+        "/myid — проверить регистрацию\n\n"
         "💬 Или просто напиши любой вопрос по-русски — отвечу!"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+
+
+async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from config import MORNING_LESSON_HOUR, EVENING_QUIZ_HOUR, TIMEZONE
+    tz_label = "МСК" if "Moscow" in TIMEZONE else TIMEZONE
+    text = (
+        f"📅 *Расписание автосообщений ({tz_label}):*\n\n"
+        f"☀️ *{MORNING_LESSON_HOUR}:00* — Урок дня (каждый день)\n"
+        f"🌙 *{EVENING_QUIZ_HOUR}:00* — Вечерний квиз (каждый день)\n"
+        f"💪 *12:00* Пн, Чт — Мотивационное сообщение\n"
+        f"🇷🇴 *15:00* Ср — Культурный факт о Румынии\n"
+        f"🎬 *10:00* Вс — Видео недели\n"
+        f"📊 *18:00* Вс — Итоги недели от Дракулы\n\n"
+        f"_Сообщения придут автоматически если ты зарегистрирован (/myid)_"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
