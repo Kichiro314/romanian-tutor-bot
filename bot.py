@@ -28,6 +28,7 @@ from handlers import (
     cmd_myid,
     cmd_schedule,
     handle_quiz_answer,
+    handle_consul_hint,
     handle_text,
 )
 from scheduler import setup_scheduler
@@ -93,8 +94,9 @@ def main():
     app.add_handler(CommandHandler("myid", cmd_myid))
     app.add_handler(CommandHandler("schedule", cmd_schedule))
 
-    # Inline button callbacks (quiz answers)
+    # Inline button callbacks
     app.add_handler(CallbackQueryHandler(handle_quiz_answer, pattern=r"^quiz_\d$"))
+    app.add_handler(CallbackQueryHandler(handle_consul_hint, pattern=r"^consul_hint$"))
 
     # Free text — questions, consulate replies, translation answers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

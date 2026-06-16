@@ -227,20 +227,26 @@ async def cmd_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await safe_send(update, text)
 
 
+def _consul_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("💡 Подсказка (перевод)", callback_data="consul_hint")
+    ]])
+
+
 async def cmd_consul(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     _simulations[user_id] = []
 
     await update.message.reply_text(
         "🏛️ Симуляция собеседования с консулом\n\n"
-        "Ты входишь в кабинет консульства Румынии...\n"
-        "Напиши приветствие, и консул ответит!\n"
-        "Для выхода: /stop_consul"
+        "Консул говорит ТОЛЬКО по-румынски — как на настоящем собеседовании!\n"
+        "Если не понял — нажми кнопку Подсказка.\n\n"
+        "Напиши приветствие чтобы начать. Выход: /stop_consul"
     )
 
     try:
         opening = await ai.generate_consulate_simulation(
-            "Начни собеседование как консул — поприветствуй кандидата на румынском и задай первый вопрос.",
+            "Начни собеседование — поприветствуй кандидата по-румынски и задай первый вопрос о личных данных.",
             []
         )
     except Exception as e:
@@ -250,10 +256,14 @@ async def cmd_consul(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     _simulations[user_id].append({"role": "assistant", "content": opening})
-    await safe_send(update, f"🏛️ *Консул:*\n\n{opening}")
+    context.user_data["last_consul_text"] = opening
+    await update.message.reply_text(
+        f"🏛️ Консул:\n\n{opening}",
+        reply_markup=_consul_keyboard()
+    )
 
 
-async def handle_consulate_message(user_id: int, text: str, update: Update):
+async def handle_consulate_message(user_id: int, text: str, update: Update, context):
     history = _simulations.get(user_id, [])
     history.append({"role": "user", "content": text})
 
@@ -266,7 +276,30 @@ async def handle_consulate_message(user_id: int, text: str, update: Update):
 
     history.append({"role": "assistant", "content": response})
     _simulations[user_id] = history[-10:]
-    await safe_send(update, f"🏛️ *Консул:*\n\n{response}")
+    context.user_data["last_consul_text"] = response
+    await update.message.reply_text(
+        f"🏛️ Консул:\n\n{response}",
+        reply_markup=_consul_keyboard()
+    )
+
+
+async def handle_consul_hint(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("Загружаю подсказку...")
+
+    last_text = context.user_data.get("last_consul_text", "")
+    if not last_text:
+        await query.answer("Нет текста для перевода", show_alert=True)
+        return
+
+    try:
+        hint = await ai.translate_consul_hint(last_text)
+    except Exception as e:
+        logger.error(f"consul hint AI error: {e}")
+        await query.answer("Не удалось получить подсказку", show_alert=True)
+        return
+
+    await query.message.reply_text(f"💡 Подсказка:\n\n{hint}")
 
 
 async def cmd_stop_consul(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -421,7 +454,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if user_id in _simulations:
-        await handle_consulate_message(user_id, text, update)
+        await handle_consulate_message(user_id, text, update, context)
         return
 
     if user_id in _pending_exercises:

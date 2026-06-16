@@ -92,17 +92,17 @@ correct_index — целое число от 0 до 3."""
 
 async def generate_consulate_simulation(user_message: str, conversation_history: list) -> str:
     system = """Ты — строгий но справедливый румынский консул на собеседовании о гражданстве.
-Задавай вопросы на румынском с переводом в скобках.
-Если кандидат отвечает неверно — мягко поправь.
-Если верно — похвали и задай следующий вопрос.
-Говори кратко, уровень A1-A2. Пиши без звёздочек и спецсимволов."""
+Говори ТОЛЬКО на румынском языке. Никаких переводов — кандидат должен понять сам.
+Если кандидат отвечает неверно или не по-румынски — мягко повтори вопрос по-румынски.
+Если верно — похвали коротко по-румынски и задай следующий вопрос.
+Говори кратко (1-3 предложения), уровень A1-A2. Без звёздочек и спецсимволов."""
 
     messages = conversation_history + [{"role": "user", "content": user_message}]
     for attempt in range(3):
         try:
             response = await client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=400,
+                max_tokens=300,
                 system=system,
                 messages=messages,
             )
@@ -112,6 +112,19 @@ async def generate_consulate_simulation(user_message: str, conversation_history:
                 await asyncio.sleep(4 * (attempt + 1))
             else:
                 raise
+
+
+async def translate_consul_hint(consul_text: str) -> str:
+    prompt = f"""Переведи на русский язык эту реплику румынского консула.
+Дай дословный перевод, затем кратко объясни ключевые слова.
+
+Реплика консула: "{consul_text}"
+
+Формат ответа (без звёздочек):
+Перевод: ...
+Ключевые слова: слово1 = перевод, слово2 = перевод"""
+
+    return await _call(200, prompt)
 
 
 async def generate_word_of_day() -> dict:
