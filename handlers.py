@@ -104,6 +104,44 @@ async def cmd_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await safe_send(update, text)
 
 
+async def _send_fillword(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    recent = await db.get_recent_questions(user_id, days=14)
+    exercise = await ai.generate_fill_blank(recent)
+    _pending_fillblanks[user_id] = exercise
+    await db.save_asked_question(user_id, exercise["sentence_with_blank"])
+    context.user_data["fillword_hint"] = exercise.get("hint", "нет подсказки")
+
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("💡 Подсказка", callback_data="fillword_hint")
+    ]])
+    await update.message.reply_text(
+        f"✍️ Упражнение 1 — вставь пропущенное слово:\n\n"
+        f"🇷🇴 {exercise['sentence_with_blank']}\n\n"
+        f"🇷🇺 {exercise['translation']}\n\n"
+        f"Напиши одно слово в ответе:",
+        reply_markup=keyboard
+    )
+
+
+async def _send_finderror(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    recent = await db.get_recent_questions(user_id, days=14)
+    exercise = await ai.generate_find_error(recent)
+    _pending_finderrors[user_id] = exercise
+    await db.save_asked_question(user_id, exercise["sentence_with_error"])
+    context.user_data["finderror_hint"] = exercise.get("error_type", "грамматическая ошибка")
+
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("💡 Тип ошибки", callback_data="finderror_hint")
+    ]])
+    await update.message.reply_text(
+        f"🔍 Упражнение 2 — найди ошибку:\n\n"
+        f"🇷🇴 {exercise['sentence_with_error']}\n\n"
+        f"🇷🇺 {exercise['translation']}\n\n"
+        f"Напиши: неправильное слово → как должно быть:",
+        reply_markup=keyboard
+    )
+
+
 async def cmd_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await update.message.reply_text("📖 Готовлю урок...")
@@ -131,8 +169,18 @@ async def cmd_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.save_learned_words(user_id, [(ro, ru) for ro, ru in key_phrases])
 
     await update.message.reply_text(
-        f"🔥 Стрик: {streak} дн. | +10 очков!"
+        f"🔥 Стрик: {streak} дн. | +10 очков!\n\n"
+        f"А теперь закрепим урок — два задания 👇"
     )
+
+    # Generate 2 exercises: fillword first, then finderror after answer
+    # Store flag so handle_text knows to show finderror after fillword is done
+    context.user_data["lesson_pending_finderror"] = True
+    try:
+        await _send_fillword(update, context, user_id)
+    except Exception as e:
+        logger.error(f"lesson fillword error: {e}")
+        context.user_data.pop("lesson_pending_finderror", None)
 
 
 async def cmd_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -399,14 +447,25 @@ async def cmd_fillword(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     _pending_fillblanks[user_id] = exercise
     await db.save_asked_question(user_id, exercise["sentence_with_blank"])
+    context.user_data["fillword_hint"] = exercise.get("hint", "нет подсказки")
 
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("💡 Подсказка", callback_data="fillword_hint")
+    ]])
     await update.message.reply_text(
         f"✍️ Вставь пропущенное слово:\n\n"
         f"🇷🇴 {exercise['sentence_with_blank']}\n\n"
         f"🇷🇺 {exercise['translation']}\n\n"
-        f"💡 Подсказка: {exercise.get('hint', '?')}\n\n"
-        f"Напиши одно слово в ответе:"
+        f"Напиши одно слово в ответе:",
+        reply_markup=keyboard
     )
+
+
+async def handle_fillword_hint(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    hint = context.user_data.get("fillword_hint", "Подсказок нет")
+    await query.message.reply_text(f"💡 Подсказка: {hint}")
 
 
 async def handle_fillword_answer(user_id: int, text: str, update: Update):
@@ -444,14 +503,25 @@ async def cmd_finderror(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     _pending_finderrors[user_id] = exercise
     await db.save_asked_question(user_id, exercise["sentence_with_error"])
+    context.user_data["finderror_hint"] = exercise.get("error_type", "грамматическая ошибка")
 
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("💡 Тип ошибки", callback_data="finderror_hint")
+    ]])
     await update.message.reply_text(
         f"🔍 Найди ошибку в предложении:\n\n"
         f"🇷🇴 {exercise['sentence_with_error']}\n\n"
         f"🇷🇺 Перевод (правильного): {exercise['translation']}\n\n"
-        f"Тип ошибки: {exercise.get('error_type', '?')}\n\n"
-        f"Напиши неправильное слово и как оно должно быть:"
+        f"Напиши неправильное слово и как оно должно быть:",
+        reply_markup=keyboard
     )
+
+
+async def handle_finderror_hint(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    hint = context.user_data.get("finderror_hint", "Подсказок нет")
+    await query.message.reply_text(f"💡 Тип ошибки: {hint}")
 
 
 async def handle_finderror_answer(user_id: int, text: str, update: Update):
@@ -596,6 +666,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id in _pending_fillblanks:
         await handle_fillword_answer(user_id, text, update)
+        if context.user_data.pop("lesson_pending_finderror", False):
+            try:
+                await _send_finderror(update, context, user_id)
+            except Exception as e:
+                logger.error(f"lesson finderror error: {e}")
         return
 
     if user_id in _pending_finderrors:
