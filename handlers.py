@@ -559,6 +559,16 @@ async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await safe_send(update, text)
 
 
+async def cmd_test_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from scheduler import send_test_notification
+    user_id = update.effective_user.id
+    await update.message.reply_text("🔔 Проверяю планировщик...")
+    try:
+        await send_test_notification(context.bot, user_id)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка: {e}")
+
+
 async def cmd_fact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fact = random.choice(CULTURAL_FACTS)
     await safe_send(update, f"🇷🇴 *Факт о Румынии:*\n\n{fact}\n\n_Знание культуры помогает на собеседовании!_")

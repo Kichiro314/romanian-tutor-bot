@@ -33,6 +33,7 @@ from handlers import (
     handle_consul_mode,
     handle_consul_hint,
     handle_text,
+    cmd_test_notify,
 )
 from scheduler import setup_scheduler
 
@@ -100,6 +101,7 @@ def main():
     app.add_handler(CommandHandler("fact", cmd_fact))
     app.add_handler(CommandHandler("myid", cmd_myid))
     app.add_handler(CommandHandler("schedule", cmd_schedule))
+    app.add_handler(CommandHandler("test_notify", cmd_test_notify))
 
     # Inline button callbacks
     app.add_handler(CallbackQueryHandler(handle_quiz_answer, pattern=r"^quiz_\d$"))
