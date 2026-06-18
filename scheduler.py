@@ -4,7 +4,7 @@ from datetime import datetime
 import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from telegram import Bot
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import TelegramError
 
 import database as db
@@ -16,6 +16,7 @@ from curriculum import (
     CULTURAL_FACTS,
 )
 from config import TIMEZONE, MORNING_LESSON_HOUR, EVENING_QUIZ_HOUR
+from handlers import store_scheduled_quiz
 
 logger = logging.getLogger(__name__)
 
@@ -77,16 +78,28 @@ async def send_evening_quiz(bot: Bot):
         try:
             recent_questions = await db.get_recent_questions(user_id, days=14)
             quiz = await ai.generate_quiz(topic["id"], topic["title"], recent_questions)
+            if not isinstance(quiz.get("options"), list) or len(quiz["options"]) < 2:
+                continue
+            if not isinstance(quiz.get("correct_index"), int):
+                quiz["correct_index"] = 0
+
             await db.save_asked_question(user_id, quiz["question"])
+            store_scheduled_quiz(user_id, quiz)
+
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"{chr(65+i)}) {opt}", callback_data=f"quiz_{i}")]
+                for i, opt in enumerate(quiz["options"])
+            ])
             message = (
                 f"🌙 Вечерний квиз!\n\n"
                 f"❓ {quiz['question']}\n\n"
-                f"🇷🇴 {quiz.get('romanian_context', '')}\n\n"
-                + "\n".join(f"{chr(65+i)}) {opt}" for i, opt in enumerate(quiz['options']))
-                + "\n\nОткрой /quiz для ответа с кнопками!"
+                f"🇷🇴 {quiz.get('romanian_context', '')}"
             )
-            if await _safe_send(bot, user_id, message):
+            try:
+                await bot.send_message(user_id, message, reply_markup=keyboard)
                 sent += 1
+            except TelegramError as e:
+                logger.warning(f"Cannot send quiz to {user_id}: {e}")
         except Exception as e:
             logger.warning(f"[SCHEDULER] Quiz error for {user_id}: {e}")
     logger.info(f"[SCHEDULER] Evening quiz sent to {sent}/{len(user_ids)} users")

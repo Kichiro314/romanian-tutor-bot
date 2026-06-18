@@ -20,6 +20,11 @@ _simulations: dict[int, list] = {}
 _pending_exercises: dict[int, dict] = {}
 _pending_fillblanks: dict[int, dict] = {}
 _pending_finderrors: dict[int, dict] = {}
+_scheduled_quizzes: dict[int, dict] = {}
+
+
+def store_scheduled_quiz(user_id: int, quiz: dict):
+    _scheduled_quizzes[user_id] = quiz
 
 ERR_MSG = "😅 Временная ошибка AI — попробуй через минуту!"
 
@@ -227,7 +232,7 @@ async def handle_quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
 
-    quiz = context.user_data.get("active_quiz")
+    quiz = context.user_data.get("active_quiz") or _scheduled_quizzes.pop(user_id, None)
     if not quiz:
         await query.edit_message_text("⚠️ Квиз истёк. Запусти /quiz заново.")
         return
