@@ -17,6 +17,8 @@ from handlers import (
     cmd_help,
     cmd_lesson,
     cmd_quiz,
+    cmd_fillword,
+    cmd_finderror,
     cmd_word,
     cmd_consul,
     cmd_stop_consul,
@@ -28,6 +30,7 @@ from handlers import (
     cmd_myid,
     cmd_schedule,
     handle_quiz_answer,
+    handle_consul_mode,
     handle_consul_hint,
     handle_text,
 )
@@ -56,11 +59,13 @@ async def post_init(application: Application):
     await application.bot.set_my_commands([
         ("start", "Начать обучение"),
         ("lesson", "Урок дня"),
-        ("quiz", "Квиз — проверь себя"),
+        ("quiz", "Квиз — выбери ответ"),
+        ("fillword", "Вставь пропущенное слово"),
+        ("finderror", "Найди ошибку в предложении"),
         ("word", "Слово дня"),
-        ("consul", "Симуляция собеседования"),
-        ("translate", "Задание на перевод"),
-        ("video", "Видео для изучения"),
+        ("translate", "Перевод с русского"),
+        ("consul", "Собеседование с консулом"),
+        ("video", "Учебное видео"),
         ("topics", "Программа курса"),
         ("progress", "Мой прогресс"),
         ("schedule", "Расписание сообщений"),
@@ -83,6 +88,8 @@ def main():
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("lesson", cmd_lesson))
     app.add_handler(CommandHandler("quiz", cmd_quiz))
+    app.add_handler(CommandHandler("fillword", cmd_fillword))
+    app.add_handler(CommandHandler("finderror", cmd_finderror))
     app.add_handler(CommandHandler("word", cmd_word))
     app.add_handler(CommandHandler("consul", cmd_consul))
     app.add_handler(CommandHandler("stop_consul", cmd_stop_consul))
@@ -96,6 +103,7 @@ def main():
 
     # Inline button callbacks
     app.add_handler(CallbackQueryHandler(handle_quiz_answer, pattern=r"^quiz_\d$"))
+    app.add_handler(CallbackQueryHandler(handle_consul_mode, pattern=r"^consul_mode_"))
     app.add_handler(CallbackQueryHandler(handle_consul_hint, pattern=r"^consul_hint$"))
 
     # Free text — questions, consulate replies, translation answers

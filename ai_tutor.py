@@ -90,30 +90,6 @@ correct_index — целое число от 0 до 3."""
     return _parse_json(text)
 
 
-async def generate_consulate_simulation(user_message: str, conversation_history: list) -> str:
-    system = """Ты — строгий но справедливый румынский консул на собеседовании о гражданстве.
-Говори ТОЛЬКО на румынском языке. Никаких переводов — кандидат должен понять сам.
-Если кандидат отвечает неверно или не по-румынски — мягко повтори вопрос по-румынски.
-Если верно — похвали коротко по-румынски и задай следующий вопрос.
-Говори кратко (1-3 предложения), уровень A1-A2. Без звёздочек и спецсимволов."""
-
-    messages = conversation_history + [{"role": "user", "content": user_message}]
-    for attempt in range(3):
-        try:
-            response = await client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=300,
-                system=system,
-                messages=messages,
-            )
-            return response.content[0].text
-        except (anthropic.InternalServerError, anthropic.APIStatusError) as e:
-            if attempt < 2:
-                await asyncio.sleep(4 * (attempt + 1))
-            else:
-                raise
-
-
 async def translate_consul_hint(consul_text: str) -> str:
     prompt = f"""Переведи на русский язык эту реплику румынского консула.
 Дай дословный перевод, затем кратко объясни ключевые слова.
@@ -195,7 +171,107 @@ async def generate_weekly_summary(stats: dict) -> str:
     return await _call(400, prompt)
 
 
-async def answer_question(user_question: str) -> str:
+async def generate_fill_blank(recent_questions: list[str] = None) -> dict:
+    avoid = ""
+    if recent_questions:
+        avoid = "НЕ повторяй эти предложения:\n" + "\n".join(f"- {q}" for q in recent_questions[:10]) + "\n\n"
+
+    prompt = f"""{avoid}Создай упражнение "вставь слово" для изучения румынского (уровень A1-A2).
+
+Верни ТОЛЬКО валидный JSON без markdown-обёртки:
+{{
+  "sentence_with_blank": "предложение на румынском где пропущенное слово заменено на ___",
+  "correct_word": "пропущенное слово",
+  "translation": "перевод всего предложения на русский",
+  "hint": "подсказка на русском (часть речи или первая буква)",
+  "explanation": "почему именно это слово (грамматика или смысл, 1 предложение)"
+}}
+
+Тема: консульское собеседование или повседневная жизнь A2."""
+
+    text = await _call(350, prompt)
+    return _parse_json(text)
+
+
+async def check_fill_blank(user_answer: str, correct: str, sentence: str) -> str:
+    prompt = f"""Проверь ответ в упражнении "вставь слово":
+Предложение: "{sentence}"
+Правильное слово: "{correct}"
+Ответ ученика: "{user_answer}"
+
+Оцени кратко (макс 70 слов). Без звёздочек. Учти что румынский допускает формы слова."""
+
+    return await _call(150, prompt)
+
+
+async def generate_find_error(recent_questions: list[str] = None) -> dict:
+    avoid = ""
+    if recent_questions:
+        avoid = "НЕ повторяй эти предложения:\n" + "\n".join(f"- {q}" for q in recent_questions[:10]) + "\n\n"
+
+    prompt = f"""{avoid}Создай упражнение "найди ошибку" для изучения румынского (уровень A1-A2).
+
+Верни ТОЛЬКО валидный JSON без markdown-обёртки:
+{{
+  "sentence_with_error": "предложение на румынском с одной намеренной ошибкой",
+  "error_word": "слово с ошибкой",
+  "correct_word": "правильный вариант",
+  "translation": "перевод правильного предложения на русский",
+  "error_type": "тип ошибки (например: падеж, согласование, неверное слово)",
+  "explanation": "объяснение ошибки (1-2 предложения, без звёздочек)"
+}}
+
+Ошибка должна быть реалистичной — такую мог бы сделать начинающий ученик."""
+
+    text = await _call(350, prompt)
+    return _parse_json(text)
+
+
+async def check_find_error(user_answer: str, error_word: str, correct_word: str, sentence: str) -> str:
+    prompt = f"""Проверь ответ в упражнении "найди ошибку":
+Предложение: "{sentence}"
+Ошибочное слово: "{error_word}" → правильно: "{correct_word}"
+Ответ ученика: "{user_answer}"
+
+Оцени кратко (макс 80 слов). Без звёздочек. Засчитай если ученик нашёл суть ошибки."""
+
+    return await _call(150, prompt)
+
+
+CONSUL_SYSTEM_KIND = """Ты — добрый и терпеливый румынский консул на собеседовании о гражданстве.
+Говори ТОЛЬКО на румынском языке. Если кандидат не понял — повтори медленнее, чуть проще.
+Если кандидат отвечает неверно — мягко поправь по-румынски.
+Если верно — тепло похвали по-румынски и задай следующий вопрос.
+Говори кратко (1-3 предложения), уровень A1-A2. Без звёздочек."""
+
+CONSUL_SYSTEM_ANGRY = """Ты — раздражённый румынский консул у которого сегодня всё идёт не так.
+Говори ТОЛЬКО на румынском языке — коротко, обрывисто, без лишних слов.
+Ты явно не рад этому собеседованию. Вздыхаешь. Барабанишь пальцами. Поторапливаешь.
+Если кандидат медлит или отвечает не так — реагируй с нескрываемым раздражением (но по-румынски!).
+Если ответ правильный — коротко буркни что-то одобрительное и сразу следующий вопрос.
+Максимум 2 предложения. Без звёздочек."""
+
+
+async def generate_consulate_simulation(user_message: str, conversation_history: list, mode: str = "kind") -> str:
+    system = CONSUL_SYSTEM_ANGRY if mode == "angry" else CONSUL_SYSTEM_KIND
+    messages = conversation_history + [{"role": "user", "content": user_message}]
+    for attempt in range(3):
+        try:
+            response = await client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=300,
+                system=system,
+                messages=messages,
+            )
+            return response.content[0].text
+        except (anthropic.InternalServerError, anthropic.APIStatusError) as e:
+            if attempt < 2:
+                await asyncio.sleep(4 * (attempt + 1))
+            else:
+                raise
+
+
+async def answer_question(user_question: str):
     prompt = f"""Студент спрашивает о румынском языке:
 "{user_question}"
 

@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 _simulations: dict[int, list] = {}
 _pending_exercises: dict[int, dict] = {}
+_pending_fillblanks: dict[int, dict] = {}
+_pending_finderrors: dict[int, dict] = {}
 
 ERR_MSG = "😅 Временная ошибка AI — попробуй через минуту!"
 
@@ -65,9 +67,11 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🧛 *Команды Дракулы:*\n\n"
         "/lesson — ежедневный урок\n"
         "/quiz — квиз с кнопками\n"
+        "/fillword — вставь пропущенное слово\n"
+        "/finderror — найди ошибку в предложении\n"
         "/word — слово дня с мемом\n"
-        "/consul — практика с консулом\n"
         "/translate — задание на перевод\n"
+        "/consul — собеседование с консулом (добрый/злой)\n"
         "/video — учебное видео\n"
         "/topics — программа курса\n"
         "/progress — статистика и стрик\n"
@@ -234,31 +238,49 @@ def _consul_keyboard() -> InlineKeyboardMarkup:
 
 
 async def cmd_consul(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    _simulations[user_id] = []
-
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("😊 Добрый консул", callback_data="consul_mode_kind"),
+        InlineKeyboardButton("😤 Злой консул", callback_data="consul_mode_angry"),
+    ]])
     await update.message.reply_text(
         "🏛️ Симуляция собеседования с консулом\n\n"
-        "Консул говорит ТОЛЬКО по-румынски — как на настоящем собеседовании!\n"
-        "Если не понял — нажми кнопку Подсказка.\n\n"
-        "Напиши приветствие чтобы начать. Выход: /stop_consul"
+        "Выбери режим:\n\n"
+        "😊 Добрый — терпелив, поддерживает\n"
+        "😤 Злой — у него сегодня всё не так, он торопит и раздражается\n\n"
+        "Консул говорит только по-румынски. Кнопка Подсказка переведёт если не понял.",
+        reply_markup=keyboard
     )
 
+
+async def handle_consul_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    mode = "angry" if query.data == "consul_mode_angry" else "kind"
+    user_id = query.from_user.id
+    _simulations[user_id] = []
+    context.user_data["consul_mode"] = mode
+
+    mode_label = "😤 Злой консул" if mode == "angry" else "😊 Добрый консул"
+    await query.edit_message_text(
+        f"Режим: {mode_label}\n\n"
+        f"Напиши приветствие чтобы начать. Выход: /stop_consul"
+    )
+
+    opening_prompt = "Начни собеседование — поприветствуй кандидата по-румынски и задай первый вопрос о личных данных."
     try:
-        opening = await ai.generate_consulate_simulation(
-            "Начни собеседование — поприветствуй кандидата по-румынски и задай первый вопрос о личных данных.",
-            []
-        )
+        opening = await ai.generate_consulate_simulation(opening_prompt, [], mode=mode)
     except Exception as e:
         logger.error(f"cmd_consul AI error: {e}")
         _simulations.pop(user_id, None)
-        await update.message.reply_text(ERR_MSG)
+        await query.message.reply_text(ERR_MSG)
         return
 
     _simulations[user_id].append({"role": "assistant", "content": opening})
     context.user_data["last_consul_text"] = opening
-    await update.message.reply_text(
-        f"🏛️ Консул:\n\n{opening}",
+    icon = "😤" if mode == "angry" else "🏛️"
+    await query.message.reply_text(
+        f"{icon} Консул:\n\n{opening}",
         reply_markup=_consul_keyboard()
     )
 
@@ -266,9 +288,10 @@ async def cmd_consul(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_consulate_message(user_id: int, text: str, update: Update, context):
     history = _simulations.get(user_id, [])
     history.append({"role": "user", "content": text})
+    mode = context.user_data.get("consul_mode", "kind")
 
     try:
-        response = await ai.generate_consulate_simulation(text, history[:-1])
+        response = await ai.generate_consulate_simulation(text, history[:-1], mode=mode)
     except Exception as e:
         logger.error(f"consulate AI error: {e}")
         await update.message.reply_text(ERR_MSG + "\nПродолжи когда AI восстановится.")
@@ -277,8 +300,9 @@ async def handle_consulate_message(user_id: int, text: str, update: Update, cont
     history.append({"role": "assistant", "content": response})
     _simulations[user_id] = history[-10:]
     context.user_data["last_consul_text"] = response
+    icon = "😤" if mode == "angry" else "🏛️"
     await update.message.reply_text(
-        f"🏛️ Консул:\n\n{response}",
+        f"{icon} Консул:\n\n{response}",
         reply_markup=_consul_keyboard()
     )
 
@@ -354,6 +378,100 @@ async def handle_translation_answer(user_id: int, text: str, update: Update):
 
     points_msg = "\n\n+20 очков! 🏆" if is_correct else ""
     await safe_send(update, feedback + points_msg + "\n\n➡️ Ещё: /translate")
+
+
+async def cmd_fillword(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    await update.message.reply_text("✍️ Готовлю задание...")
+
+    recent = await db.get_recent_questions(user_id, days=14)
+    try:
+        exercise = await ai.generate_fill_blank(recent)
+    except Exception as e:
+        logger.error(f"cmd_fillword AI error: {e}")
+        await update.message.reply_text(ERR_MSG)
+        return
+
+    _pending_fillblanks[user_id] = exercise
+    await db.save_asked_question(user_id, exercise["sentence_with_blank"])
+
+    await update.message.reply_text(
+        f"✍️ Вставь пропущенное слово:\n\n"
+        f"🇷🇴 {exercise['sentence_with_blank']}\n\n"
+        f"🇷🇺 {exercise['translation']}\n\n"
+        f"💡 Подсказка: {exercise.get('hint', '?')}\n\n"
+        f"Напиши одно слово в ответе:"
+    )
+
+
+async def handle_fillword_answer(user_id: int, text: str, update: Update):
+    exercise = _pending_fillblanks.pop(user_id)
+    try:
+        feedback = await ai.check_fill_blank(text, exercise["correct_word"], exercise["sentence_with_blank"])
+    except Exception as e:
+        logger.error(f"fillword check error: {e}")
+        feedback = f"Правильный ответ: {exercise['correct_word']}"
+
+    correct = exercise["correct_word"].lower().strip()
+    is_correct = correct in text.lower() or text.lower().strip() == correct
+    if is_correct:
+        await db.add_points(user_id, 15)
+    await db.save_quiz_result(user_id, exercise["sentence_with_blank"], is_correct)
+
+    points = "\n\n+15 очков! 🏆" if is_correct else ""
+    explanation = f"\n\n📖 {exercise.get('explanation', '')}"
+    await update.message.reply_text(
+        feedback + explanation + points + "\n\n➡️ Ещё задание: /fillword"
+    )
+
+
+async def cmd_finderror(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    await update.message.reply_text("🔍 Готовлю предложение с ошибкой...")
+
+    recent = await db.get_recent_questions(user_id, days=14)
+    try:
+        exercise = await ai.generate_find_error(recent)
+    except Exception as e:
+        logger.error(f"cmd_finderror AI error: {e}")
+        await update.message.reply_text(ERR_MSG)
+        return
+
+    _pending_finderrors[user_id] = exercise
+    await db.save_asked_question(user_id, exercise["sentence_with_error"])
+
+    await update.message.reply_text(
+        f"🔍 Найди ошибку в предложении:\n\n"
+        f"🇷🇴 {exercise['sentence_with_error']}\n\n"
+        f"🇷🇺 Перевод (правильного): {exercise['translation']}\n\n"
+        f"Тип ошибки: {exercise.get('error_type', '?')}\n\n"
+        f"Напиши неправильное слово и как оно должно быть:"
+    )
+
+
+async def handle_finderror_answer(user_id: int, text: str, update: Update):
+    exercise = _pending_finderrors.pop(user_id)
+    try:
+        feedback = await ai.check_find_error(
+            text, exercise["error_word"], exercise["correct_word"], exercise["sentence_with_error"]
+        )
+    except Exception as e:
+        logger.error(f"finderror check error: {e}")
+        feedback = f"Ошибка: {exercise['error_word']} → {exercise['correct_word']}"
+
+    is_correct = (
+        exercise["error_word"].lower() in text.lower()
+        or exercise["correct_word"].lower() in text.lower()
+    )
+    if is_correct:
+        await db.add_points(user_id, 15)
+    await db.save_quiz_result(user_id, exercise["sentence_with_error"], is_correct)
+
+    points = "\n\n+15 очков! 🏆" if is_correct else ""
+    explanation = f"\n\n📖 {exercise.get('explanation', '')}"
+    await update.message.reply_text(
+        feedback + explanation + points + "\n\n➡️ Ещё задание: /finderror"
+    )
 
 
 VIDEO_RESOURCES = [
@@ -459,6 +577,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_id in _pending_exercises:
         await handle_translation_answer(user_id, text, update)
+        return
+
+    if user_id in _pending_fillblanks:
+        await handle_fillword_answer(user_id, text, update)
+        return
+
+    if user_id in _pending_finderrors:
+        await handle_finderror_answer(user_id, text, update)
         return
 
     await update.message.reply_text("🧛 Думаю...")
