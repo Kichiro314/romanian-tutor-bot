@@ -1,6 +1,7 @@
 import random
 import logging
 from datetime import datetime
+import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from telegram import Bot
@@ -156,12 +157,14 @@ async def send_weekly_summary(bot: Bot):
 async def send_test_notification(bot: Bot, user_id: int):
     """Send immediate test message to verify scheduler pipeline works."""
     user_ids = await db.get_all_user_ids()
-    now = datetime.now().strftime("%H:%M:%S")
+    tz = pytz.timezone(TIMEZONE)
+    now = datetime.now(tz).strftime("%H:%M:%S")
+    tz_label = "МСК" if "Moscow" in TIMEZONE else TIMEZONE
     message = (
-        f"✅ Тест рассылки — {now}\n\n"
+        f"✅ Тест рассылки — {now} ({tz_label})\n\n"
         f"Планировщик работает!\n"
         f"Пользователей в базе: {len(user_ids)}\n\n"
-        f"Следующий урок придёт в {MORNING_LESSON_HOUR}:00 по МСК."
+        f"Следующий урок придёт в {MORNING_LESSON_HOUR}:00 {tz_label}."
     )
     await bot.send_message(user_id, message)
 
