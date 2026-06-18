@@ -712,24 +712,24 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from config import OPENAI_API_KEY
-    if not OPENAI_API_KEY:
+    from config import GROQ_API_KEY
+    if not GROQ_API_KEY:
         await update.message.reply_text(
             "🎤 Голосовой ввод не настроен.\n"
-            "Добавь OPENAI_API_KEY в переменные Railway."
+            "Добавь GROQ_API_KEY в переменные Railway."
         )
         return
 
     await update.message.reply_text("🎤 Распознаю голос...")
     try:
-        from openai import AsyncOpenAI
-        oai = AsyncOpenAI(api_key=OPENAI_API_KEY)
+        from groq import AsyncGroq
+        groq = AsyncGroq(api_key=GROQ_API_KEY)
 
         tg_file = await context.bot.get_file(update.message.voice.file_id)
         ogg_bytes = await tg_file.download_as_bytearray()
 
-        transcript = await oai.audio.transcriptions.create(
-            model="whisper-1",
+        transcript = await groq.audio.transcriptions.create(
+            model="whisper-large-v3",
             file=("voice.ogg", bytes(ogg_bytes), "audio/ogg"),
         )
         text = transcript.text.strip()

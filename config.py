@@ -5,7 +5,7 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Bucharest")
 MORNING_LESSON_HOUR = int(os.getenv("MORNING_LESSON_HOUR", "9"))
 EVENING_QUIZ_HOUR = int(os.getenv("EVENING_QUIZ_HOUR", "19"))
