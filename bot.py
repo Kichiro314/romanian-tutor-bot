@@ -37,6 +37,7 @@ from handlers import (
     handle_finderror_hint,
     handle_finderror_translation,
     handle_text,
+    handle_voice,
     cmd_test_notify,
 )
 from scheduler import setup_scheduler
@@ -118,6 +119,8 @@ def main():
 
     # Free text — questions, consulate replies, translation answers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    # Voice messages — transcribed via OpenAI Whisper then routed as text
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
     # Global error handler
     app.add_error_handler(error_handler)

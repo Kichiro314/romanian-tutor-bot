@@ -672,13 +672,8 @@ async def cmd_fact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await safe_send(update, f"🇷🇴 *Факт о Румынии:*\n\n{fact}\n\n_Знание культуры помогает на собеседовании!_")
 
 
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = update.message.text.strip()
-
-    if text.startswith("/"):
-        return
-
+async def _route_text(user_id: int, text: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Route any text (typed or voice-transcribed) through the active exercise/simulation logic."""
     if user_id in _simulations:
         await handle_consulate_message(user_id, text, update, context)
         return
@@ -707,3 +702,44 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"handle_text AI error: {e}")
         await update.message.reply_text(ERR_MSG)
+
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    if text.startswith("/"):
+        return
+    await _route_text(update.effective_user.id, text, update, context)
+
+
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from config import OPENAI_API_KEY
+    if not OPENAI_API_KEY:
+        await update.message.reply_text(
+            "🎤 Голосовой ввод не настроен.\n"
+            "Добавь OPENAI_API_KEY в переменные Railway."
+        )
+        return
+
+    await update.message.reply_text("🎤 Распознаю голос...")
+    try:
+        from openai import AsyncOpenAI
+        oai = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+        tg_file = await context.bot.get_file(update.message.voice.file_id)
+        ogg_bytes = await tg_file.download_as_bytearray()
+
+        transcript = await oai.audio.transcriptions.create(
+            model="whisper-1",
+            file=("voice.ogg", bytes(ogg_bytes), "audio/ogg"),
+        )
+        text = transcript.text.strip()
+        if not text:
+            await update.message.reply_text("🎤 Не удалось разобрать речь. Попробуй ещё раз.")
+            return
+
+        await update.message.reply_text(f"🎤 Распознано: {text}")
+        await _route_text(update.effective_user.id, text, update, context)
+
+    except Exception as e:
+        logger.error(f"handle_voice error: {e}")
+        await update.message.reply_text("😅 Ошибка распознавания. Попробуй написать текстом.")
