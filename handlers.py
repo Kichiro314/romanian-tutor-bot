@@ -110,14 +110,15 @@ async def _send_fillword(update: Update, context: ContextTypes.DEFAULT_TYPE, use
     _pending_fillblanks[user_id] = exercise
     await db.save_asked_question(user_id, exercise["sentence_with_blank"])
     context.user_data["fillword_hint"] = exercise.get("hint", "нет подсказки")
+    context.user_data["fillword_translation"] = exercise.get("translation", "")
 
     keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("💡 Подсказка", callback_data="fillword_hint")
+        InlineKeyboardButton("💡 Подсказка", callback_data="fillword_hint"),
+        InlineKeyboardButton("🇷🇺 Перевод", callback_data="fillword_translation"),
     ]])
     await update.message.reply_text(
         f"✍️ Упражнение 1 — вставь пропущенное слово:\n\n"
         f"🇷🇴 {exercise['sentence_with_blank']}\n\n"
-        f"🇷🇺 {exercise['translation']}\n\n"
         f"Напиши одно слово в ответе:",
         reply_markup=keyboard
     )
@@ -129,14 +130,15 @@ async def _send_finderror(update: Update, context: ContextTypes.DEFAULT_TYPE, us
     _pending_finderrors[user_id] = exercise
     await db.save_asked_question(user_id, exercise["sentence_with_error"])
     context.user_data["finderror_hint"] = exercise.get("error_type", "грамматическая ошибка")
+    context.user_data["finderror_translation"] = exercise.get("translation", "")
 
     keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("💡 Тип ошибки", callback_data="finderror_hint")
+        InlineKeyboardButton("💡 Тип ошибки", callback_data="finderror_hint"),
+        InlineKeyboardButton("🇷🇺 Перевод", callback_data="finderror_translation"),
     ]])
     await update.message.reply_text(
         f"🔍 Упражнение 2 — найди ошибку:\n\n"
         f"🇷🇴 {exercise['sentence_with_error']}\n\n"
-        f"🇷🇺 {exercise['translation']}\n\n"
         f"Напиши: неправильное слово → как должно быть:",
         reply_markup=keyboard
     )
@@ -448,14 +450,15 @@ async def cmd_fillword(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _pending_fillblanks[user_id] = exercise
     await db.save_asked_question(user_id, exercise["sentence_with_blank"])
     context.user_data["fillword_hint"] = exercise.get("hint", "нет подсказки")
+    context.user_data["fillword_translation"] = exercise.get("translation", "")
 
     keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("💡 Подсказка", callback_data="fillword_hint")
+        InlineKeyboardButton("💡 Подсказка", callback_data="fillword_hint"),
+        InlineKeyboardButton("🇷🇺 Перевод", callback_data="fillword_translation"),
     ]])
     await update.message.reply_text(
         f"✍️ Вставь пропущенное слово:\n\n"
         f"🇷🇴 {exercise['sentence_with_blank']}\n\n"
-        f"🇷🇺 {exercise['translation']}\n\n"
         f"Напиши одно слово в ответе:",
         reply_markup=keyboard
     )
@@ -466,6 +469,13 @@ async def handle_fillword_hint(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     hint = context.user_data.get("fillword_hint", "Подсказок нет")
     await query.message.reply_text(f"💡 Подсказка: {hint}")
+
+
+async def handle_fillword_translation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    translation = context.user_data.get("fillword_translation", "Перевод недоступен")
+    await query.message.reply_text(f"🇷🇺 Перевод: {translation}")
 
 
 async def handle_fillword_answer(user_id: int, text: str, update: Update):
@@ -504,14 +514,15 @@ async def cmd_finderror(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _pending_finderrors[user_id] = exercise
     await db.save_asked_question(user_id, exercise["sentence_with_error"])
     context.user_data["finderror_hint"] = exercise.get("error_type", "грамматическая ошибка")
+    context.user_data["finderror_translation"] = exercise.get("translation", "")
 
     keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("💡 Тип ошибки", callback_data="finderror_hint")
+        InlineKeyboardButton("💡 Тип ошибки", callback_data="finderror_hint"),
+        InlineKeyboardButton("🇷🇺 Перевод", callback_data="finderror_translation"),
     ]])
     await update.message.reply_text(
         f"🔍 Найди ошибку в предложении:\n\n"
         f"🇷🇴 {exercise['sentence_with_error']}\n\n"
-        f"🇷🇺 Перевод (правильного): {exercise['translation']}\n\n"
         f"Напиши неправильное слово и как оно должно быть:",
         reply_markup=keyboard
     )
@@ -522,6 +533,13 @@ async def handle_finderror_hint(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
     hint = context.user_data.get("finderror_hint", "Подсказок нет")
     await query.message.reply_text(f"💡 Тип ошибки: {hint}")
+
+
+async def handle_finderror_translation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    translation = context.user_data.get("finderror_translation", "Перевод недоступен")
+    await query.message.reply_text(f"🇷🇺 Перевод (правильного предложения): {translation}")
 
 
 async def handle_finderror_answer(user_id: int, text: str, update: Update):

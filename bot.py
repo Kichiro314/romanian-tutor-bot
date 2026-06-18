@@ -33,7 +33,9 @@ from handlers import (
     handle_consul_mode,
     handle_consul_hint,
     handle_fillword_hint,
+    handle_fillword_translation,
     handle_finderror_hint,
+    handle_finderror_translation,
     handle_text,
     cmd_test_notify,
 )
@@ -110,7 +112,9 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_consul_mode, pattern=r"^consul_mode_"))
     app.add_handler(CallbackQueryHandler(handle_consul_hint, pattern=r"^consul_hint$"))
     app.add_handler(CallbackQueryHandler(handle_fillword_hint, pattern=r"^fillword_hint$"))
+    app.add_handler(CallbackQueryHandler(handle_fillword_translation, pattern=r"^fillword_translation$"))
     app.add_handler(CallbackQueryHandler(handle_finderror_hint, pattern=r"^finderror_hint$"))
+    app.add_handler(CallbackQueryHandler(handle_finderror_translation, pattern=r"^finderror_translation$"))
 
     # Free text — questions, consulate replies, translation answers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
