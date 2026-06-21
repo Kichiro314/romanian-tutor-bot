@@ -61,6 +61,9 @@ logger = logging.getLogger(__name__)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    from telegram.error import TimedOut, NetworkError
+    if isinstance(context.error, (TimedOut, NetworkError)):
+        return  # обычные сетевые таймауты polling — не ошибка
     logger.error(f"Unhandled error: {context.error}", exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:
         await update.effective_message.reply_text(
