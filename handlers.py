@@ -361,17 +361,29 @@ async def cmd_word(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await db.save_learned_words(user_id, [(word["romanian"], word["russian"])])
     await db.add_points(user_id, 5)
 
+    # Send meme image
+    try:
+        from meme_generator import create_word_meme
+        img_bytes = create_word_meme(
+            word_ro=word["romanian"],
+            translation_ru=word["russian"],
+            caption=word.get("meme_caption", ""),
+            pronunciation=word.get("pronunciation", ""),
+        )
+        await update.message.reply_photo(photo=img_bytes)
+    except Exception as e:
+        logger.error(f"meme image error: {e}")
+
     text = (
-        f"📝 *Слово дня:*\n\n"
-        f"🇷🇴 *{word['romanian']}* — {word['russian']}\n"
+        f"📝 Слово дня:\n\n"
+        f"🇷🇴 {word['romanian']} — {word['russian']}\n"
         f"🔊 {word.get('pronunciation', '')}\n\n"
         f"📖 {word.get('example_ro', '')}\n"
-        f"_{word.get('example_ru', '')}_\n\n"
-        f"😂 {word.get('meme_caption', '')}\n\n"
+        f"{word.get('example_ru', '')}\n\n"
         f"🧠 Запомни: {word.get('memory_tip', '')}\n\n"
         f"+5 очков!"
     )
-    await safe_send(update, text)
+    await update.message.reply_text(text)
 
 
 def _consul_keyboard() -> InlineKeyboardMarkup:
