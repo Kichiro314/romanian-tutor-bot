@@ -272,6 +272,108 @@ async def generate_consulate_simulation(user_message: str, conversation_history:
                 raise
 
 
+async def generate_build_sentence(recent_questions: list[str] = None) -> dict:
+    avoid = ""
+    if recent_questions:
+        avoid = "НЕ повторяй эти слова/предложения:\n" + "\n".join(f"- {q}" for q in recent_questions[:10]) + "\n\n"
+
+    prompt = f"""{avoid}Создай упражнение "составь предложение" для румынского языка (A1-A2).
+
+Верни ТОЛЬКО валидный JSON без markdown-обёртки:
+{{
+  "words": ["слово1", "слово2", "слово3"],
+  "correct_sentence": "правильное предложение с артиклями",
+  "translation": "перевод на русский",
+  "hint": "подсказка по артиклям или порядку слов (1 строка)"
+}}
+
+Слова в "words" — без артиклей, перемешаны случайно (НЕ в порядке предложения).
+Тема: консульское собеседование или повседневная жизнь A2.
+2-4 слова, уровень A1-A2."""
+
+    text = await _call(300, prompt)
+    return _parse_json(text)
+
+
+async def check_build_sentence(user_answer: str, correct: str, words: list) -> str:
+    prompt = f"""Проверь ответ в упражнении "составь предложение" на румынском:
+Слова для составления: {', '.join(words)}
+Правильное предложение: "{correct}"
+Ответ ученика: "{user_answer}"
+
+Оцени кратко (макс 70 слов). Без звёздочек.
+Засчитай если суть и артикли верны, даже если порядок слов чуть иной но грамматически допустим."""
+
+    return await _call(150, prompt)
+
+
+async def generate_verb_of_day(learned_verbs: list[str] = None) -> dict:
+    avoid = ""
+    if learned_verbs:
+        avoid = f"НЕ давай эти глаголы (уже изучены): {', '.join(learned_verbs[:30])}\n\n"
+
+    prompt = f"""{avoid}Дай один румынский глагол для изучения, уровень A1-A2.
+Приоритет: глаголы для консульского собеседования или повседневной жизни.
+
+Верни ТОЛЬКО валидный JSON без markdown-обёртки:
+{{
+  "verb": "a ___",
+  "meaning_ru": "перевод на русский",
+  "conjugation": {{
+    "eu": "...",
+    "tu": "...",
+    "el/ea": "...",
+    "noi": "...",
+    "voi": "...",
+    "ei/ele": "..."
+  }},
+  "example_ro": "пример предложения на румынском",
+  "example_ru": "перевод примера",
+  "memory_tip": "как запомнить (ассоциация, 1 предложение)"
+}}"""
+
+    text = await _call(400, prompt)
+    return _parse_json(text)
+
+
+async def generate_verb_review(learned_verbs: list[dict]) -> dict:
+    verbs_text = "\n".join(f"- {v['verb_ro']} = {v['meaning_ru']}" for v in learned_verbs[:25])
+
+    prompt = f"""Создай задание на проверку знания румынских глаголов.
+
+Изученные глаголы пользователя:
+{verbs_text}
+
+Выбери ОДИН глагол из этого списка и создай задание.
+Верни ТОЛЬКО валидный JSON без markdown-обёртки:
+{{
+  "verb": "a ___",
+  "question": "текст задания на русском",
+  "romanian_context": "контекст на румынском (если нужен)",
+  "correct_answer": "правильный ответ",
+  "hint": "подсказка",
+  "explanation": "объяснение (1-2 предложения, без звёздочек)"
+}}
+
+Попроси проспрягать глагол для конкретного лица, или вставить форму в предложение,
+или перевести фразу с этим глаголом."""
+
+    text = await _call(400, prompt)
+    return _parse_json(text)
+
+
+async def check_verb_review(user_answer: str, correct: str, question: str) -> str:
+    prompt = f"""Проверь ответ на задание по глаголу:
+Задание: "{question}"
+Правильный ответ: "{correct}"
+Ответ ученика: "{user_answer}"
+
+Оцени кратко (макс 70 слов). Без звёздочек.
+Учти варианты написания и допустимые формы."""
+
+    return await _call(150, prompt)
+
+
 async def answer_question(user_question: str):
     prompt = f"""Студент спрашивает о румынском языке:
 "{user_question}"

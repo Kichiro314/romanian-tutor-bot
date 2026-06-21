@@ -36,6 +36,12 @@ from handlers import (
     handle_fillword_translation,
     handle_finderror_hint,
     handle_finderror_translation,
+    cmd_buildsentence,
+    handle_buildsentence_hint,
+    handle_buildsentence_translation,
+    cmd_verb,
+    cmd_verbquiz,
+    handle_verbquiz_hint,
     handle_text,
     handle_voice,
     cmd_test_notify,
@@ -68,6 +74,9 @@ async def post_init(application: Application):
         ("quiz", "Квиз — выбери ответ"),
         ("fillword", "Вставь пропущенное слово"),
         ("finderror", "Найди ошибку в предложении"),
+        ("buildsentence", "Составь предложение из слов"),
+        ("verb", "Глагол дня с спряжением"),
+        ("verbquiz", "Проверка изученных глаголов"),
         ("word", "Слово дня"),
         ("translate", "Перевод с русского"),
         ("consul", "Собеседование с консулом"),
@@ -96,6 +105,9 @@ def main():
     app.add_handler(CommandHandler("quiz", cmd_quiz))
     app.add_handler(CommandHandler("fillword", cmd_fillword))
     app.add_handler(CommandHandler("finderror", cmd_finderror))
+    app.add_handler(CommandHandler("buildsentence", cmd_buildsentence))
+    app.add_handler(CommandHandler("verb", cmd_verb))
+    app.add_handler(CommandHandler("verbquiz", cmd_verbquiz))
     app.add_handler(CommandHandler("word", cmd_word))
     app.add_handler(CommandHandler("consul", cmd_consul))
     app.add_handler(CommandHandler("stop_consul", cmd_stop_consul))
@@ -116,6 +128,9 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_fillword_translation, pattern=r"^fillword_translation$"))
     app.add_handler(CallbackQueryHandler(handle_finderror_hint, pattern=r"^finderror_hint$"))
     app.add_handler(CallbackQueryHandler(handle_finderror_translation, pattern=r"^finderror_translation$"))
+    app.add_handler(CallbackQueryHandler(handle_buildsentence_hint, pattern=r"^buildsentence_hint$"))
+    app.add_handler(CallbackQueryHandler(handle_buildsentence_translation, pattern=r"^buildsentence_translation$"))
+    app.add_handler(CallbackQueryHandler(handle_verbquiz_hint, pattern=r"^verbquiz_hint$"))
 
     # Free text — questions, consulate replies, translation answers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

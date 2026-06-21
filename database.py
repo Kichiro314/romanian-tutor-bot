@@ -58,6 +58,18 @@ async def init_db():
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS learned_verbs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                verb_ro TEXT,
+                meaning_ru TEXT,
+                example_ro TEXT DEFAULT '',
+                learned_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, verb_ro),
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        """)
         await db.commit()
 
 
@@ -147,6 +159,10 @@ async def get_user_stats(user_id: int) -> dict:
             "SELECT COUNT(DISTINCT romanian) as words FROM learned_words WHERE user_id = ?", (user_id,)
         ) as cursor:
             words = await cursor.fetchone()
+        async with db.execute(
+            "SELECT COUNT(*) as verbs FROM learned_verbs WHERE user_id = ?", (user_id,)
+        ) as cursor:
+            verbs = await cursor.fetchone()
         return {
             "streak": user["streak"] if user else 0,
             "points": user["total_points"] if user else 0,
@@ -154,6 +170,7 @@ async def get_user_stats(user_id: int) -> dict:
             "quiz_total": quiz["cnt"] or 0,
             "quiz_correct": int(quiz["correct"] or 0),
             "words_learned": words["words"] or 0,
+            "verbs_learned": verbs["verbs"] or 0,
         }
 
 
@@ -189,6 +206,35 @@ async def save_asked_question(user_id: int, question: str):
             )
         """, (user_id, user_id))
         await db.commit()
+
+
+async def save_learned_verb(user_id: int, verb_ro: str, meaning_ru: str, example_ro: str = ""):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO learned_verbs (user_id, verb_ro, meaning_ru, example_ro) VALUES (?, ?, ?, ?)",
+            (user_id, verb_ro, meaning_ru, example_ro)
+        )
+        await db.commit()
+
+
+async def get_learned_verbs(user_id: int) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT verb_ro, meaning_ru, example_ro, learned_at FROM learned_verbs WHERE user_id = ? ORDER BY learned_at DESC",
+            (user_id,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+
+async def get_learned_verb_count(user_id: int) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT COUNT(*) FROM learned_verbs WHERE user_id = ?", (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
 
 async def get_recent_questions(user_id: int, days: int = 14) -> list[str]:

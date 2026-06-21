@@ -20,6 +20,8 @@ _simulations: dict[int, list] = {}
 _pending_exercises: dict[int, dict] = {}
 _pending_fillblanks: dict[int, dict] = {}
 _pending_finderrors: dict[int, dict] = {}
+_pending_buildsentences: dict[int, dict] = {}
+_pending_verbquizzes: dict[int, dict] = {}
 _scheduled_quizzes: dict[int, dict] = {}
 
 
@@ -59,7 +61,11 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/quiz — выбери правильный ответ\n"
         "/fillword — вставь пропущенное слово\n"
         "/finderror — найди ошибку в предложении\n"
+        "/buildsentence — составь предложение из слов\n"
         "/translate — переведи фразу с русского\n\n"
+        "🔤 Глаголы:\n"
+        "/verb — глагол дня со спряжением (база растёт!)\n"
+        "/verbquiz — проверка изученных глаголов\n\n"
         "🏛️ Практика:\n"
         "/consul — собеседование с консулом (добрый или злой)\n\n"
         "📊 Прочее:\n"
@@ -122,7 +128,7 @@ async def _send_fillword(update: Update, context: ContextTypes.DEFAULT_TYPE, use
         InlineKeyboardButton("🇷🇺 Перевод", callback_data="fillword_translation"),
     ]])
     await update.message.reply_text(
-        f"✍️ Упражнение 1 — вставь пропущенное слово:\n\n"
+        f"✍️ Упражнение — вставь пропущенное слово:\n\n"
         f"🇷🇴 {exercise['sentence_with_blank']}\n\n"
         f"Напиши одно слово в ответе:",
         reply_markup=keyboard
@@ -142,11 +148,51 @@ async def _send_finderror(update: Update, context: ContextTypes.DEFAULT_TYPE, us
         InlineKeyboardButton("🇷🇺 Перевод", callback_data="finderror_translation"),
     ]])
     await update.message.reply_text(
-        f"🔍 Упражнение 2 — найди ошибку:\n\n"
+        f"🔍 Упражнение — найди ошибку:\n\n"
         f"🇷🇴 {exercise['sentence_with_error']}\n\n"
         f"Напиши: неправильное слово → как должно быть:",
         reply_markup=keyboard
     )
+
+
+async def _send_buildsentence(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    recent = await db.get_recent_questions(user_id, days=14)
+    exercise = await ai.generate_build_sentence(recent)
+    _pending_buildsentences[user_id] = exercise
+    await db.save_asked_question(user_id, " ".join(exercise["words"]))
+    context.user_data["buildsentence_hint"] = exercise.get("hint", "нет подсказки")
+    context.user_data["buildsentence_translation"] = exercise.get("translation", "")
+
+    shuffled = exercise["words"][:]
+    random.shuffle(shuffled)
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("💡 Подсказка", callback_data="buildsentence_hint"),
+        InlineKeyboardButton("🇷🇺 Перевод", callback_data="buildsentence_translation"),
+    ]])
+    await update.message.reply_text(
+        f"🔤 Упражнение — составь предложение:\n\n"
+        f"Слова: {' | '.join(shuffled)}\n\n"
+        f"Добавь артикли и составь правильное предложение:",
+        reply_markup=keyboard
+    )
+
+
+async def _dispatch_lesson_exercise(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    """Pop and send the next exercise from the lesson queue."""
+    queue = context.user_data.get("lesson_exercise_queue", [])
+    if not queue:
+        return
+    next_type = queue.pop(0)
+    context.user_data["lesson_exercise_queue"] = queue
+    try:
+        if next_type == "fillword":
+            await _send_fillword(update, context, user_id)
+        elif next_type == "finderror":
+            await _send_finderror(update, context, user_id)
+        elif next_type == "buildsentence":
+            await _send_buildsentence(update, context, user_id)
+    except Exception as e:
+        logger.error(f"lesson dispatch {next_type} error: {e}")
 
 
 async def cmd_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -175,19 +221,46 @@ async def cmd_lesson(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if key_phrases:
         await db.save_learned_words(user_id, [(ro, ru) for ro, ru in key_phrases])
 
+    # Verb of the day in the lesson
+    learned_verbs = await db.get_learned_verbs(user_id)
+    learned_verb_names = [v["verb_ro"] for v in learned_verbs]
+    try:
+        verb = await ai.generate_verb_of_day(learned_verb_names)
+        await db.save_learned_verb(user_id, verb["verb_ro"], verb["meaning_ru"], verb.get("example_ro", ""))
+        conj = verb.get("conjugation", {})
+        conj_text = (
+            f"eu {conj.get('eu','')} / tu {conj.get('tu','')} / el {conj.get('el/ea','')}\n"
+            f"noi {conj.get('noi','')} / voi {conj.get('voi','')} / ei {conj.get('ei/ele','')}"
+        )
+        await update.message.reply_text(
+            f"📚 Глагол урока: {verb['verb_ro']} — {verb['meaning_ru']}\n\n"
+            f"{conj_text}\n\n"
+            f"📖 {verb.get('example_ro','')} — {verb.get('example_ru','')}\n"
+            f"🧠 {verb.get('memory_tip','')}\n\n"
+            f"+5 очков!"
+        )
+        await db.add_points(user_id, 5)
+    except Exception as e:
+        logger.error(f"lesson verb error: {e}")
+
     await update.message.reply_text(
         f"🔥 Стрик: {streak} дн. | +10 очков!\n\n"
-        f"А теперь закрепим урок — два задания 👇"
+        f"Закрепим урок — два задания на выбор 👇"
     )
 
-    # Generate 2 exercises: fillword first, then finderror after answer
-    # Store flag so handle_text knows to show finderror after fillword is done
-    context.user_data["lesson_pending_finderror"] = True
+    # Pick 2 random exercise types for the lesson
+    exercise_types = random.sample(["fillword", "finderror", "buildsentence"], 2)
+    context.user_data["lesson_exercise_queue"] = [exercise_types[1]]
     try:
-        await _send_fillword(update, context, user_id)
+        if exercise_types[0] == "fillword":
+            await _send_fillword(update, context, user_id)
+        elif exercise_types[0] == "finderror":
+            await _send_finderror(update, context, user_id)
+        elif exercise_types[0] == "buildsentence":
+            await _send_buildsentence(update, context, user_id)
     except Exception as e:
-        logger.error(f"lesson fillword error: {e}")
-        context.user_data.pop("lesson_pending_finderror", None)
+        logger.error(f"lesson first exercise error: {e}")
+        context.user_data.pop("lesson_exercise_queue", None)
 
 
 async def cmd_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -572,6 +645,168 @@ async def handle_finderror_answer(user_id: int, text: str, update: Update):
     )
 
 
+async def cmd_buildsentence(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    await update.message.reply_text("🔤 Готовлю задание...")
+
+    recent = await db.get_recent_questions(user_id, days=14)
+    try:
+        exercise = await ai.generate_build_sentence(recent)
+    except Exception as e:
+        logger.error(f"cmd_buildsentence AI error: {e}")
+        await update.message.reply_text(ERR_MSG)
+        return
+
+    _pending_buildsentences[user_id] = exercise
+    await db.save_asked_question(user_id, " ".join(exercise["words"]))
+    context.user_data["buildsentence_hint"] = exercise.get("hint", "нет подсказки")
+    context.user_data["buildsentence_translation"] = exercise.get("translation", "")
+
+    shuffled = exercise["words"][:]
+    random.shuffle(shuffled)
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("💡 Подсказка", callback_data="buildsentence_hint"),
+        InlineKeyboardButton("🇷🇺 Перевод", callback_data="buildsentence_translation"),
+    ]])
+    await update.message.reply_text(
+        f"🔤 Составь предложение:\n\n"
+        f"Слова: {' | '.join(shuffled)}\n\n"
+        f"Добавь артикли и составь правильное предложение:",
+        reply_markup=keyboard
+    )
+
+
+async def handle_buildsentence_hint(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    hint = context.user_data.get("buildsentence_hint", "Подсказок нет")
+    await query.message.reply_text(f"💡 Подсказка: {hint}")
+
+
+async def handle_buildsentence_translation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    translation = context.user_data.get("buildsentence_translation", "Перевод недоступен")
+    await query.message.reply_text(f"🇷🇺 Перевод: {translation}")
+
+
+async def handle_buildsentence_answer(user_id: int, text: str, update: Update):
+    exercise = _pending_buildsentences.pop(user_id)
+    try:
+        feedback = await ai.check_build_sentence(text, exercise["correct_sentence"], exercise["words"])
+    except Exception as e:
+        logger.error(f"buildsentence check error: {e}")
+        feedback = f"Правильное предложение: {exercise['correct_sentence']}"
+
+    correct_lower = exercise["correct_sentence"].lower()
+    is_correct = (
+        text.lower().strip() == correct_lower
+        or all(w.lower() in text.lower() for w in exercise["words"])
+    )
+    if is_correct:
+        await db.add_points(user_id, 15)
+    await db.save_quiz_result(user_id, " ".join(exercise["words"]), is_correct)
+
+    points = "\n\n+15 очков! 🏆" if is_correct else f"\n\n✅ Правильно: {exercise['correct_sentence']}"
+    await update.message.reply_text(feedback + points + "\n\n➡️ Ещё: /buildsentence")
+
+
+async def cmd_verb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    await update.message.reply_text("📚 Выбираю глагол...")
+
+    learned_verbs = await db.get_learned_verbs(user_id)
+    learned_names = [v["verb_ro"] for v in learned_verbs]
+
+    try:
+        verb = await ai.generate_verb_of_day(learned_names)
+    except Exception as e:
+        logger.error(f"cmd_verb AI error: {e}")
+        await update.message.reply_text(ERR_MSG)
+        return
+
+    await db.save_learned_verb(user_id, verb["verb_ro"], verb["meaning_ru"], verb.get("example_ro", ""))
+    await db.add_points(user_id, 5)
+
+    conj = verb.get("conjugation", {})
+    conj_text = (
+        f"eu {conj.get('eu','')} / tu {conj.get('tu','')} / el {conj.get('el/ea','')}\n"
+        f"noi {conj.get('noi','')} / voi {conj.get('voi','')} / ei {conj.get('ei/ele','')}"
+    )
+    verb_count = len(learned_names) + 1
+    await update.message.reply_text(
+        f"📚 Глагол #{verb_count}: {verb['verb_ro']} — {verb['meaning_ru']}\n\n"
+        f"{conj_text}\n\n"
+        f"📖 {verb.get('example_ro','')} — {verb.get('example_ru','')}\n\n"
+        f"🧠 {verb.get('memory_tip','')}\n\n"
+        f"+5 очков! Проверь знания: /verbquiz"
+    )
+
+
+async def cmd_verbquiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    learned_verbs = await db.get_learned_verbs(user_id)
+
+    if len(learned_verbs) < 3:
+        remaining = 3 - len(learned_verbs)
+        await update.message.reply_text(
+            f"📚 Пока изучено {len(learned_verbs)} гл. — нужно ещё {remaining}.\n"
+            f"Учи новые: /verb"
+        )
+        return
+
+    await update.message.reply_text("🎯 Генерирую задание по глаголам...")
+    try:
+        quiz = await ai.generate_verb_review(learned_verbs)
+    except Exception as e:
+        logger.error(f"cmd_verbquiz AI error: {e}")
+        await update.message.reply_text(ERR_MSG)
+        return
+
+    _pending_verbquizzes[user_id] = quiz
+    context.user_data["verbquiz_hint"] = quiz.get("hint", "нет подсказки")
+
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("💡 Подсказка", callback_data="verbquiz_hint")
+    ]])
+    romanian_ctx = quiz.get("romanian_context", "")
+    ctx_line = f"\n🇷🇴 {romanian_ctx}" if romanian_ctx else ""
+    await update.message.reply_text(
+        f"🎯 Проверка глаголов — {quiz.get('verb','')}\n\n"
+        f"❓ {quiz['question']}{ctx_line}\n\n"
+        f"Напиши ответ:",
+        reply_markup=keyboard
+    )
+
+
+async def handle_verbquiz_hint(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    hint = context.user_data.get("verbquiz_hint", "Подсказок нет")
+    await query.message.reply_text(f"💡 Подсказка: {hint}")
+
+
+async def handle_verbquiz_answer(user_id: int, text: str, update: Update):
+    quiz = _pending_verbquizzes.pop(user_id)
+    try:
+        feedback = await ai.check_verb_review(text, quiz["correct_answer"], quiz["question"])
+    except Exception as e:
+        logger.error(f"verbquiz check error: {e}")
+        feedback = f"Правильный ответ: {quiz['correct_answer']}"
+
+    correct = quiz["correct_answer"].lower().strip()
+    is_correct = correct in text.lower() or text.lower().strip() == correct
+    if is_correct:
+        await db.add_points(user_id, 15)
+    await db.save_quiz_result(user_id, quiz["question"], is_correct)
+
+    points = "\n\n+15 очков! 🏆" if is_correct else ""
+    explanation = f"\n\n📖 {quiz.get('explanation', '')}"
+    await update.message.reply_text(
+        feedback + explanation + points + "\n\n➡️ Ещё: /verbquiz | Новый глагол: /verb"
+    )
+
+
 VIDEO_RESOURCES = [
     ("Romanian With Anca — канал для начинающих", "https://www.youtube.com/@RomanianWithAnca/videos"),
     ("RomanianPod101 — уроки A1/A2", "https://www.youtube.com/@RomanianPod101/videos"),
@@ -631,6 +866,7 @@ async def cmd_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⭐ Очков: {stats['points']}\n"
         f"📖 Уроков: {stats['lessons']}\n"
         f"🧠 Слов: {stats['words_learned']}\n"
+        f"🔤 Глаголов: {stats.get('verbs_learned', 0)}\n"
         f"🎯 Квизов: {stats['quiz_total']} (точность {accuracy}%)\n\n"
         f"🏆 Уровень: {level}\n\n"
         f"{'Отличный темп! 💪' if stats['streak'] >= 3 else 'Учись каждый день — стрик решает! 🎯'}"
@@ -684,15 +920,21 @@ async def _route_text(user_id: int, text: str, update: Update, context: ContextT
 
     if user_id in _pending_fillblanks:
         await handle_fillword_answer(user_id, text, update)
-        if context.user_data.pop("lesson_pending_finderror", False):
-            try:
-                await _send_finderror(update, context, user_id)
-            except Exception as e:
-                logger.error(f"lesson finderror error: {e}")
+        await _dispatch_lesson_exercise(update, context, user_id)
         return
 
     if user_id in _pending_finderrors:
         await handle_finderror_answer(user_id, text, update)
+        await _dispatch_lesson_exercise(update, context, user_id)
+        return
+
+    if user_id in _pending_buildsentences:
+        await handle_buildsentence_answer(user_id, text, update)
+        await _dispatch_lesson_exercise(update, context, user_id)
+        return
+
+    if user_id in _pending_verbquizzes:
+        await handle_verbquiz_answer(user_id, text, update)
         return
 
     await update.message.reply_text("🧛 Думаю...")
