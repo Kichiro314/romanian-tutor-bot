@@ -148,9 +148,15 @@ async def send_cultural_fact(bot: Bot):
     logger.info(f"[SCHEDULER] Cultural fact — users: {len(user_ids)}")
     if not user_ids:
         return
-    fact = random.choice(CULTURAL_FACTS)
     for user_id in user_ids:
-        await _safe_send(bot, user_id, f"🇷🇴 Факт о Румынии:\n\n{fact}")
+        shown = await db.get_shown_fact_indices(user_id)
+        available = [i for i in range(len(CULTURAL_FACTS)) if i not in shown]
+        if not available:
+            await db.reset_shown_facts(user_id)
+            available = list(range(len(CULTURAL_FACTS)))
+        idx = random.choice(available)
+        await db.save_shown_fact(user_id, idx)
+        await _safe_send(bot, user_id, f"🇷🇴 Факт о Румынии:\n\n{CULTURAL_FACTS[idx]}")
 
 
 async def send_weekly_summary(bot: Bot):

@@ -59,6 +59,16 @@ async def init_db():
             )
         """)
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS shown_facts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                fact_index INTEGER,
+                shown_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, fact_index),
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS learned_verbs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
@@ -205,6 +215,30 @@ async def save_asked_question(user_id: int, question: str):
                 ORDER BY asked_at DESC LIMIT 50
             )
         """, (user_id, user_id))
+        await db.commit()
+
+
+async def get_shown_fact_indices(user_id: int) -> list[int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT fact_index FROM shown_facts WHERE user_id = ?", (user_id,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows]
+
+
+async def save_shown_fact(user_id: int, fact_index: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO shown_facts (user_id, fact_index) VALUES (?, ?)",
+            (user_id, fact_index)
+        )
+        await db.commit()
+
+
+async def reset_shown_facts(user_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM shown_facts WHERE user_id = ?", (user_id,))
         await db.commit()
 
 

@@ -956,8 +956,25 @@ async def cmd_test_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_fact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    fact = random.choice(CULTURAL_FACTS)
-    await safe_send(update, f"🇷🇴 *Факт о Румынии:*\n\n{fact}\n\n_Знание культуры помогает на собеседовании!_")
+    user_id = update.effective_user.id
+    shown = await db.get_shown_fact_indices(user_id)
+    available = [i for i in range(len(CULTURAL_FACTS)) if i not in shown]
+
+    reset_msg = ""
+    if not available:
+        await db.reset_shown_facts(user_id)
+        available = list(range(len(CULTURAL_FACTS)))
+        reset_msg = "🔄 Ты уже видел все факты — начинаем по новой!\n\n"
+
+    idx = random.choice(available)
+    await db.save_shown_fact(user_id, idx)
+    remaining = len(available) - 1
+
+    await update.message.reply_text(
+        f"{reset_msg}🇷🇴 Факт о Румынии:\n\n{CULTURAL_FACTS[idx]}\n\n"
+        f"Знание культуры помогает на собеседовании!\n"
+        f"📊 Новых фактов осталось: {remaining}"
+    )
 
 
 async def _route_text(user_id: int, text: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
