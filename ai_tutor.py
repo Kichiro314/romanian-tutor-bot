@@ -318,7 +318,7 @@ async def generate_verb_of_day(learned_verbs: list[str] = None) -> dict:
 
 Верни ТОЛЬКО валидный JSON без markdown-обёртки:
 {{
-  "verb": "a ___",
+  "verb_ro": "a ___",
   "meaning_ru": "перевод на русский",
   "conjugation": {{
     "eu": "...",
@@ -334,7 +334,11 @@ async def generate_verb_of_day(learned_verbs: list[str] = None) -> dict:
 }}"""
 
     text = await _call(400, prompt)
-    return _parse_json(text)
+    data = _parse_json(text)
+    # Normalize in case Claude uses "verb" instead of "verb_ro"
+    if "verb_ro" not in data and "verb" in data:
+        data["verb_ro"] = data["verb"]
+    return data
 
 
 async def generate_verb_review(learned_verbs: list[dict]) -> dict:

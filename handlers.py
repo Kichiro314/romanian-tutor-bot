@@ -742,12 +742,14 @@ async def cmd_verb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         verb = await ai.generate_verb_of_day(learned_names)
+        verb_ro = verb["verb_ro"]
+        meaning_ru = verb["meaning_ru"]
     except Exception as e:
         logger.error(f"cmd_verb AI error: {e}")
         await update.message.reply_text(ERR_MSG)
         return
 
-    await db.save_learned_verb(user_id, verb["verb_ro"], verb["meaning_ru"], verb.get("example_ro", ""))
+    await db.save_learned_verb(user_id, verb_ro, meaning_ru, verb.get("example_ro", ""))
     await db.add_points(user_id, 5)
 
     conj = verb.get("conjugation", {})
@@ -757,7 +759,7 @@ async def cmd_verb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     verb_count = len(learned_names) + 1
     await update.message.reply_text(
-        f"📚 Глагол #{verb_count}: {verb['verb_ro']} — {verb['meaning_ru']}\n\n"
+        f"📚 Глагол #{verb_count}: {verb_ro} — {meaning_ru}\n\n"
         f"{conj_text}\n\n"
         f"📖 {verb.get('example_ro','')} — {verb.get('example_ru','')}\n\n"
         f"🧠 {verb.get('memory_tip','')}\n\n"
