@@ -46,6 +46,9 @@ from handlers import (
     handle_text,
     handle_voice,
     cmd_test_notify,
+    cmd_dialog,
+    cmd_stopdialog,
+    handle_dialog_scenario,
 )
 from scheduler import setup_scheduler
 
@@ -87,6 +90,8 @@ async def post_init(application: Application):
         ("progress", "Мой прогресс"),
         ("schedule", "Расписание сообщений"),
         ("fact", "Факт о Румынии"),
+        ("dialog", "Голосовой диалог на румынском"),
+        ("stopdialog", "Завершить диалог"),
         ("myid", "Проверить регистрацию"),
         ("help", "Помощь"),
     ])
@@ -122,6 +127,8 @@ def main():
     app.add_handler(CommandHandler("myid", cmd_myid))
     app.add_handler(CommandHandler("schedule", cmd_schedule))
     app.add_handler(CommandHandler("test_notify", cmd_test_notify))
+    app.add_handler(CommandHandler("dialog", cmd_dialog))
+    app.add_handler(CommandHandler("stopdialog", cmd_stopdialog))
 
     # Inline button callbacks
     app.add_handler(CallbackQueryHandler(handle_quiz_answer, pattern=r"^quiz_\d$"))
@@ -134,6 +141,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_buildsentence_hint, pattern=r"^buildsentence_hint$"))
     app.add_handler(CallbackQueryHandler(handle_buildsentence_translation, pattern=r"^buildsentence_translation$"))
     app.add_handler(CallbackQueryHandler(handle_verbquiz_hint, pattern=r"^verbquiz_hint$"))
+    app.add_handler(CallbackQueryHandler(handle_dialog_scenario, pattern=r"^dialog_"))
 
     # Free text — questions, consulate replies, translation answers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

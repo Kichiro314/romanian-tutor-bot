@@ -394,6 +394,70 @@ async def annotate_languages(text: str) -> str:
     return await _call(200, prompt)
 
 
+DIALOG_SCENARIOS: dict[str, str] = {
+    "shop": "магазин (La magazin) — продавец помогает покупателю выбрать товар",
+    "restaurant": "ресторан (La restaurant) — официант принимает заказ у клиента",
+    "consul": "консульство (La consulat) — консул проводит собеседование о гражданстве",
+    "station": "вокзал (La gară) — кассир продаёт билеты на поезд",
+    "doctor": "врач (La doctor) — врач принимает пациента",
+    "meeting": "знакомство (Cunoașterea) — два человека знакомятся и разговаривают",
+}
+
+DIALOG_SYSTEM = """Ты играешь персонажа в сценарии разговорного диалога на румынском языке.
+Твоя задача — помогать ученику практиковать живой разговорный румынский.
+
+Правила:
+- Персонаж говорит ТОЛЬКО по-румынски (1-3 предложения, разговорный стиль)
+- После реплики ученика кратко исправь его ошибки на русском языке (если есть)
+- Будь естественным — как в реальной жизни
+- Уровень сложности: A2-B1, но допускай B2 фразы
+- Без звёздочек и markdown-разметки"""
+
+
+async def start_dialog(scenario_key: str) -> dict:
+    scenario_desc = DIALOG_SCENARIOS.get(scenario_key, "разговор на румынском")
+    prompt = f"""Ты играешь персонажа: {scenario_desc}
+
+Начни диалог — поприветствуй и задай первую реплику/вопрос на румынском.
+
+Верни ТОЛЬКО валидный JSON:
+{{
+  "character_line": "первая реплика персонажа на румынском (1-2 предложения)",
+  "translation": "перевод реплики на русский",
+  "scenario_title": "название сценария по-русски (5-7 слов)",
+  "character_name": "имя или роль персонажа (например: Продавец, Доктор Попеску)"
+}}"""
+
+    text = await _call(300, prompt, system=DIALOG_SYSTEM)
+    return _parse_json(text)
+
+
+async def continue_dialog(user_text: str, history: list, scenario_key: str) -> dict:
+    scenario_desc = DIALOG_SCENARIOS.get(scenario_key, "разговор на румынском")
+    history_text = "\n".join(
+        f"{'Персонаж' if m['role'] == 'assistant' else 'Ученик'}: {m['content']}"
+        for m in history[-8:]
+    )
+    prompt = f"""Диалог: {scenario_desc}
+
+История разговора:
+{history_text}
+Ученик: {user_text}
+
+Верни ТОЛЬКО валидный JSON:
+{{
+  "character_line": "следующая реплика персонажа на румынском (1-3 предложения, разговорный стиль)",
+  "translation": "перевод реплики на русский",
+  "correction": "если ученик допустил ошибки в румынском — кратко объясни на русском (1 предложение), иначе пустая строка",
+  "praise": "если ученик сказал правильно — короткая похвала на русском (1-3 слова), иначе пустая строка"
+}}
+
+Персонаж говорит ТОЛЬКО по-румынски. correction и praise — на русском."""
+
+    text = await _call(400, prompt, system=DIALOG_SYSTEM)
+    return _parse_json(text)
+
+
 async def answer_question(user_question: str):
     prompt = f"""Студент спрашивает о румынском языке:
 "{user_question}"

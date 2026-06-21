@@ -23,6 +23,16 @@ _pending_finderrors: dict[int, dict] = {}
 _pending_buildsentences: dict[int, dict] = {}
 _pending_verbquizzes: dict[int, dict] = {}
 _scheduled_quizzes: dict[int, dict] = {}
+_dialog_sessions: dict[int, dict] = {}  # user_id -> {scenario, history, turn, character_name}
+
+DIALOG_SCENARIO_LABELS = {
+    "shop": "🛒 Магазин",
+    "restaurant": "🍽️ Ресторан",
+    "consul": "🏛️ Консульство",
+    "station": "🚉 Вокзал",
+    "doctor": "🏥 У врача",
+    "meeting": "👋 Знакомство",
+}
 
 
 def store_scheduled_quiz(user_id: int, quiz: dict):
@@ -68,7 +78,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/verbquiz — проверка изученных глаголов\n"
         "/myverbs — все изученные глаголы таблицей\n\n"
         "🏛️ Практика:\n"
-        "/consul — собеседование с консулом (добрый или злой)\n\n"
+        "/consul — собеседование с консулом (добрый или злой)\n"
+        "/dialog — голосовой диалог на румынском (6 сценариев)\n\n"
         "📊 Прочее:\n"
         "/progress — стрик, очки, статистика\n"
         "/schedule — расписание автосообщений\n"
@@ -97,7 +108,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/verbquiz — проверка изученных глаголов\n"
         "/myverbs — все изученные глаголы таблицей\n\n"
         "ПРАКТИКА:\n"
-        "/consul — собеседование с консулом (добрый/злой)\n\n"
+        "/consul — собеседование с консулом (добрый/злой)\n"
+        "/dialog — голосовой диалог (магазин, ресторан, консульство...)\n"
+        "/stopdialog — завершить диалог\n\n"
         "ПРОЧЕЕ:\n"
         "/progress — стрик, очки, статистика\n"
         "/schedule — расписание автосообщений\n"
@@ -957,6 +970,127 @@ async def cmd_test_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Ошибка: {e}")
 
 
+async def cmd_dialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🛒 Магазин", callback_data="dialog_shop"),
+            InlineKeyboardButton("🍽️ Ресторан", callback_data="dialog_restaurant"),
+        ],
+        [
+            InlineKeyboardButton("🏛️ Консульство", callback_data="dialog_consul"),
+            InlineKeyboardButton("🚉 Вокзал", callback_data="dialog_station"),
+        ],
+        [
+            InlineKeyboardButton("🏥 У врача", callback_data="dialog_doctor"),
+            InlineKeyboardButton("👋 Знакомство", callback_data="dialog_meeting"),
+        ],
+    ])
+    await update.message.reply_text(
+        "🎭 Голосовой диалог на румынском\n\n"
+        "Бот сыграет персонажа и будет говорить голосом.\n"
+        "Отвечай голосовым сообщением или текстом на румынском.\n"
+        "После каждой реплики — краткая проверка ошибок.\n\n"
+        "Выбери сценарий:",
+        reply_markup=keyboard,
+    )
+
+
+async def handle_dialog_scenario(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    scenario = query.data[len("dialog_"):]
+    user_id = query.from_user.id
+    label = DIALOG_SCENARIO_LABELS.get(scenario, scenario)
+
+    await query.edit_message_text(f"🎭 {label} — генерирую диалог...")
+
+    try:
+        opening = await ai.start_dialog(scenario)
+    except Exception as e:
+        logger.error(f"dialog start error: {e}")
+        await query.message.reply_text(ERR_MSG)
+        return
+
+    _dialog_sessions[user_id] = {
+        "scenario": scenario,
+        "character_name": opening.get("character_name", "Персонаж"),
+        "history": [{"role": "assistant", "content": opening["character_line"]}],
+        "turn": 0,
+    }
+
+    char_name = opening.get("character_name", "Персонаж")
+    await query.message.reply_text(
+        f"🎭 {opening.get('scenario_title', label)}\n\n"
+        f"{char_name}: {opening['character_line']}\n"
+        f"🇷🇺 {opening['translation']}\n\n"
+        f"Отвечай голосом или текстом на румынском. /stopdialog — выход."
+    )
+
+    from tts import synthesize
+    voice_bytes = await synthesize(opening["character_line"])
+    if voice_bytes:
+        await query.message.reply_voice(voice=voice_bytes)
+
+
+async def handle_dialog_message(user_id: int, text: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    session = _dialog_sessions.get(user_id)
+    if not session:
+        return
+
+    history = session["history"]
+    scenario = session["scenario"]
+    char_name = session["character_name"]
+
+    history.append({"role": "user", "content": text})
+
+    try:
+        response = await ai.continue_dialog(text, history, scenario)
+    except Exception as e:
+        logger.error(f"dialog continue error: {e}")
+        await update.message.reply_text(ERR_MSG)
+        return
+
+    history.append({"role": "assistant", "content": response["character_line"]})
+    session["history"] = history[-12:]
+    session["turn"] += 1
+
+    correction = response.get("correction", "").strip()
+    praise = response.get("praise", "").strip()
+
+    if praise:
+        await update.message.reply_text(f"✅ {praise}")
+        await db.add_points(user_id, 5)
+    if correction:
+        await update.message.reply_text(f"📝 {correction}")
+
+    await update.message.reply_text(
+        f"{char_name}: {response['character_line']}\n"
+        f"🇷🇺 {response['translation']}"
+    )
+
+    from tts import synthesize
+    voice_bytes = await synthesize(response["character_line"])
+    if voice_bytes:
+        await update.message.reply_voice(voice=voice_bytes)
+
+
+async def cmd_stopdialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    session = _dialog_sessions.pop(user_id, None)
+    if session:
+        turns = session.get("turn", 0)
+        label = DIALOG_SCENARIO_LABELS.get(session["scenario"], session["scenario"])
+        await db.add_points(user_id, turns * 3)
+        await update.message.reply_text(
+            f"✅ Диалог завершён! {label}\n"
+            f"Реплик: {turns} | +{turns * 3} очков\n\n"
+            f"Хорошая разговорная практика! /dialog — новый сценарий"
+        )
+    else:
+        await update.message.reply_text("Нет активного диалога. Начни: /dialog")
+
+
 async def cmd_fact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     shown = await db.get_shown_fact_indices(user_id)
@@ -981,6 +1115,10 @@ async def cmd_fact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _route_text(user_id: int, text: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Route any text (typed or voice-transcribed) through the active exercise/simulation logic."""
+    if user_id in _dialog_sessions:
+        await handle_dialog_message(user_id, text, update, context)
+        return
+
     if user_id in _simulations:
         await handle_consulate_message(user_id, text, update, context)
         return
