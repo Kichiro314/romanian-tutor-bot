@@ -41,6 +41,7 @@ from handlers import (
     handle_buildsentence_translation,
     cmd_verb,
     cmd_verbquiz,
+    cmd_myverbs,
     handle_verbquiz_hint,
     handle_text,
     handle_voice,
@@ -77,6 +78,7 @@ async def post_init(application: Application):
         ("buildsentence", "Составь предложение из слов"),
         ("verb", "Глагол дня с спряжением"),
         ("verbquiz", "Проверка изученных глаголов"),
+        ("myverbs", "Все изученные глаголы"),
         ("word", "Слово дня"),
         ("translate", "Перевод с русского"),
         ("consul", "Собеседование с консулом"),
@@ -108,6 +110,7 @@ def main():
     app.add_handler(CommandHandler("buildsentence", cmd_buildsentence))
     app.add_handler(CommandHandler("verb", cmd_verb))
     app.add_handler(CommandHandler("verbquiz", cmd_verbquiz))
+    app.add_handler(CommandHandler("myverbs", cmd_myverbs))
     app.add_handler(CommandHandler("word", cmd_word))
     app.add_handler(CommandHandler("consul", cmd_consul))
     app.add_handler(CommandHandler("stop_consul", cmd_stop_consul))

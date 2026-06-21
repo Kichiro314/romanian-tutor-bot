@@ -52,7 +52,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Не бойся — кусаю только плохую грамматику 😄\n\n"
         "🎯 Наша цель:\n"
         "• Сдать собеседование с консулом Румынии\n"
-        "• Достичь уровня A2\n\n"
+        "• Достичь уровня B2\n\n"
         "📚 Уроки и теория:\n"
         "/lesson — урок дня с ключевыми фразами\n"
         "/word — слово дня с мемом и способом запомнить\n"
@@ -65,7 +65,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/translate — переведи фразу с русского\n\n"
         "🔤 Глаголы:\n"
         "/verb — глагол дня со спряжением (база растёт!)\n"
-        "/verbquiz — проверка изученных глаголов\n\n"
+        "/verbquiz — проверка изученных глаголов\n"
+        "/myverbs — все изученные глаголы таблицей\n\n"
         "🏛️ Практика:\n"
         "/consul — собеседование с консулом (добрый или злой)\n\n"
         "📊 Прочее:\n"
@@ -80,21 +81,30 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "🧛 *Команды Дракулы:*\n\n"
-        "/lesson — ежедневный урок\n"
+        "🧛 Команды Дракулы:\n\n"
+        "УРОКИ:\n"
+        "/lesson — полный урок + глагол + 2 упражнения\n"
+        "/word — слово дня с мемом\n"
+        "/topics — программа курса\n\n"
+        "УПРАЖНЕНИЯ:\n"
         "/quiz — квиз с кнопками\n"
         "/fillword — вставь пропущенное слово\n"
         "/finderror — найди ошибку в предложении\n"
-        "/word — слово дня с мемом\n"
-        "/translate — задание на перевод\n"
-        "/consul — собеседование с консулом (добрый/злой)\n"
-        "/video — учебное видео\n"
-        "/topics — программа курса\n"
-        "/progress — статистика и стрик\n"
+        "/buildsentence — составь предложение из слов\n"
+        "/translate — задание на перевод\n\n"
+        "ГЛАГОЛЫ:\n"
+        "/verb — глагол дня со спряжением\n"
+        "/verbquiz — проверка изученных глаголов\n"
+        "/myverbs — все изученные глаголы таблицей\n\n"
+        "ПРАКТИКА:\n"
+        "/consul — собеседование с консулом (добрый/злой)\n\n"
+        "ПРОЧЕЕ:\n"
+        "/progress — стрик, очки, статистика\n"
         "/schedule — расписание автосообщений\n"
+        "/video — учебное видео\n"
         "/fact — факт о Румынии\n"
         "/myid — проверить регистрацию\n\n"
-        "💬 Или просто напиши вопрос по-русски!"
+        "Или просто напиши вопрос по-русски (или голосом)!"
     )
     await safe_send(update, text)
 
@@ -779,6 +789,32 @@ async def cmd_verbquiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_myverbs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    verbs = await db.get_learned_verbs(user_id)
+
+    if not verbs:
+        await update.message.reply_text(
+            "📚 Ты ещё не изучил ни одного глагола.\n"
+            "Начни с /verb — получи первый глагол дня!"
+        )
+        return
+
+    # Build table; split into chunks if list is long
+    lines = [f"📚 Изучено глаголов: {len(verbs)}\n"]
+    for i, v in enumerate(verbs, 1):
+        date_str = v["learned_at"][:10]
+        lines.append(f"{i:>3}. {v['verb_ro']:<18} — {v['meaning_ru']}  ({date_str})")
+
+    # Telegram message limit is 4096 chars; send in pages of 50 verbs
+    chunk_size = 50
+    for start in range(0, len(lines), chunk_size):
+        chunk = lines[start:start + chunk_size]
+        # Use monospace for alignment
+        text = "```\n" + "\n".join(chunk) + "\n```"
+        await safe_send(update, text)
+
+
 async def handle_verbquiz_hint(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -839,7 +875,7 @@ async def cmd_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         f"📚 *Программа курса:*\n\n"
         f"🏛️ *Блок 1: Консульское собеседование*\n{consulate_list}\n\n"
-        f"🎓 *Блок 2: Уровень A2*\n{a2_list}\n\n"
+        f"🎓 *Блок 2: Уровень A2-B2*\n{a2_list}\n\n"
         f"Каждый /lesson — новая тема!"
     )
     await safe_send(update, text)
@@ -854,10 +890,14 @@ async def cmd_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
         accuracy = round(stats["quiz_correct"] / stats["quiz_total"] * 100)
 
     level = "🌱 Начинающий"
-    if stats["points"] >= 500:
-        level = "📗 A1 уверенный"
-    if stats["points"] >= 1500:
-        level = "📘 Почти A2!"
+    if stats["points"] >= 300:
+        level = "📗 A1"
+    if stats["points"] >= 1000:
+        level = "📘 A2"
+    if stats["points"] >= 2500:
+        level = "📙 B1 — уже серьёзно!"
+    if stats["points"] >= 5000:
+        level = "📕 Идёшь к B2!"
 
     streak_emoji = "🔥" if stats["streak"] >= 3 else "✨"
     text = (
