@@ -379,6 +379,21 @@ async def check_verb_review(user_answer: str, correct: str, question: str) -> st
     return await _call(150, prompt)
 
 
+async def annotate_languages(text: str) -> str:
+    prompt = f"""В этом тексте могут быть смешаны русские и румынские слова.
+Определи язык каждого слова/фразы и обозначь румынские слова флагом 🇷🇴 в скобках.
+
+Текст: "{text}"
+
+Правила:
+- Румынские слова/фразы: пиши как (🇷🇴 слово)
+- Русские слова: оставляй без изменений
+- Если весь текст на одном языке — верни его без изменений
+- Отвечай ТОЛЬКО отформатированным текстом, без пояснений и комментариев"""
+
+    return await _call(200, prompt)
+
+
 async def answer_question(user_question: str):
     prompt = f"""Студент спрашивает о румынском языке:
 "{user_question}"

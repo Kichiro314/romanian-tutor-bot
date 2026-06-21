@@ -1050,7 +1050,12 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("🎤 Не удалось разобрать речь. Попробуй ещё раз.")
             return
 
-        await update.message.reply_text(f"🎤 Распознано: {text}")
+        # Annotate languages for display, route original text
+        try:
+            annotated = await ai.annotate_languages(text)
+        except Exception:
+            annotated = text
+        await update.message.reply_text(f"🎤 Распознано: {annotated}")
         await _route_text(update.effective_user.id, text, update, context)
 
     except Exception as e:
