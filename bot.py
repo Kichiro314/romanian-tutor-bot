@@ -49,6 +49,7 @@ from handlers import (
     cmd_dialog,
     cmd_stopdialog,
     handle_dialog_scenario,
+    handle_dialog_translation,
 )
 from scheduler import setup_scheduler
 
@@ -141,6 +142,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_buildsentence_hint, pattern=r"^buildsentence_hint$"))
     app.add_handler(CallbackQueryHandler(handle_buildsentence_translation, pattern=r"^buildsentence_translation$"))
     app.add_handler(CallbackQueryHandler(handle_verbquiz_hint, pattern=r"^verbquiz_hint$"))
+    app.add_handler(CallbackQueryHandler(handle_dialog_translation, pattern=r"^dialog_translation$"))
     app.add_handler(CallbackQueryHandler(handle_dialog_scenario, pattern=r"^dialog_"))
 
     # Free text — questions, consulate replies, translation answers

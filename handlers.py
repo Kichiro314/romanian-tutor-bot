@@ -1012,19 +1012,23 @@ async def handle_dialog_scenario(update: Update, context: ContextTypes.DEFAULT_T
         await query.message.reply_text(ERR_MSG)
         return
 
+    char_name = opening.get("character_name", "Персонаж")
     _dialog_sessions[user_id] = {
         "scenario": scenario,
-        "character_name": opening.get("character_name", "Персонаж"),
+        "character_name": char_name,
         "history": [{"role": "assistant", "content": opening["character_line"]}],
         "turn": 0,
+        "last_translation": opening.get("translation", ""),
     }
 
-    char_name = opening.get("character_name", "Персонаж")
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🇷🇺 Перевод", callback_data="dialog_translation"),
+    ]])
     await query.message.reply_text(
         f"🎭 {opening.get('scenario_title', label)}\n\n"
-        f"{char_name}: {opening['character_line']}\n"
-        f"🇷🇺 {opening['translation']}\n\n"
-        f"Отвечай голосом или текстом на румынском. /stopdialog — выход."
+        f"{char_name}: {opening['character_line']}\n\n"
+        f"Отвечай голосом или текстом на румынском. /stopdialog — выход.",
+        reply_markup=keyboard,
     )
 
     from tts import synthesize
@@ -1054,6 +1058,7 @@ async def handle_dialog_message(user_id: int, text: str, update: Update, context
     history.append({"role": "assistant", "content": response["character_line"]})
     session["history"] = history[-12:]
     session["turn"] += 1
+    session["last_translation"] = response.get("translation", "")
 
     correction = response.get("correction", "").strip()
     praise = response.get("praise", "").strip()
@@ -1064,9 +1069,12 @@ async def handle_dialog_message(user_id: int, text: str, update: Update, context
     if correction:
         await update.message.reply_text(f"📝 {correction}")
 
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🇷🇺 Перевод", callback_data="dialog_translation"),
+    ]])
     await update.message.reply_text(
-        f"{char_name}: {response['character_line']}\n"
-        f"🇷🇺 {response['translation']}"
+        f"{char_name}: {response['character_line']}",
+        reply_markup=keyboard,
     )
 
     from tts import synthesize
@@ -1089,6 +1097,18 @@ async def cmd_stopdialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text("Нет активного диалога. Начни: /dialog")
+
+
+async def handle_dialog_translation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    session = _dialog_sessions.get(user_id)
+    if not session:
+        await query.answer("Диалог уже завершён", show_alert=True)
+        return
+    translation = session.get("last_translation", "Перевод недоступен")
+    await query.message.reply_text(f"🇷🇺 {translation}")
 
 
 async def cmd_fact(update: Update, context: ContextTypes.DEFAULT_TYPE):
