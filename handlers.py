@@ -232,13 +232,13 @@ async def handle_quiz_answer(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
 
+    user_id = query.from_user.id
     quiz = context.user_data.get("active_quiz") or _scheduled_quizzes.pop(user_id, None)
     if not quiz:
         await query.edit_message_text("⚠️ Квиз истёк. Запусти /quiz заново.")
         return
 
     chosen = int(query.data.split("_")[1])
-    user_id = query.from_user.id
     correct_idx = quiz["correct_index"]
     is_correct = chosen == correct_idx
 
